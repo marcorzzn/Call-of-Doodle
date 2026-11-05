@@ -1,0 +1,58 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-hand: 'Patrick Hand', cursive;
+    --font-sketch: 'Architects Daughter', cursive;
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #f6f3ea;
+    color: #18181b;
+    overflow-x: hidden;
+    user-select: none;
+  }
+}
+
+.font-hand {
+  font-family: var(--font-hand);
+}
+
+.font-sketch {
+  font-family: var(--font-sketch);
+}
+
+.font-mono-code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Comic hand-drawn irregular border effect for HUD & GDD notebook boxes */
+.sketch-box {
+  background-color: #fbf9f3;
+  border: 3px solid #141413;
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  box-shadow: 4px 4px 0px #141413;
+}
+
+.sketch-box-sm {
+  background-color: #fbf9f3;
+  border: 2.5px solid #141413;
+  border-radius: 15px 225px 15px 255px / 255px 15px 225px 15px;
+  box-shadow: 3px 3px 0px #141413;
+}
+
+/* Graph paper quadretti background for GDD & Notebook surfaces */
+.bg-graph-paper {
+  background-color: #f7f4eb;
+  background-image: 
+    linear-gradient(to right, rgba(59, 130, 246, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(59, 130, 246, 0.16) 1px, transparent 1px),
+    linear-gradient(to right, rgba(239, 68, 68, 0.22) 2px, transparent 2px);
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  background-position: 0 0, 0 0, 48px 0;
+}

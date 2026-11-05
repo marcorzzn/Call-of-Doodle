@@ -1,0 +1,6 @@
+{
+  "name": "Call of Doodle — 3D Sketchbook FPS & GDD",
+  "description": "FPS 3D low-poly in stile scarabocchio su carta a quadretti, con fisica ragdoll stickman, arsenale di cancelleria, audio foley procedurale e Game Design Document tecnico completo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
