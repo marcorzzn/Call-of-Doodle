@@ -106,10 +106,10 @@ export default function App() {
   const [activePassageLabel, setActivePassageLabel] = useState<string | null>(null);
   const [comicPops, setComicPops] = useState<ComicPopText[]>([]);
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
+  const [dockCollapsed, setDockCollapsed] = useState<boolean>(true);
   const [gddOpen, setGddOpen] = useState<boolean>(false);
   const [killFeedMsg, setKillFeedMsg] = useState<string>(
-    'Mega-Casa 760x760m pronta! Condotti HVAC + Corridoi di Libri + Spatial Grid O(1)'
+    'Stile Doodle 3D Fedele allo Screenshot · Casa 760x760m · 17 Armi · Condotti HVAC & Libri'
   );
 
   const stateRef = useRef({
@@ -246,55 +246,45 @@ export default function App() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 1.75));
     renderer.setSize(
       mountEl.clientWidth || window.innerWidth,
       mountEl.clientHeight || window.innerHeight
     );
-    renderer.shadowMap.enabled = !isSoftwareGl;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Disabled expensive real-time shadow maps in favor of Batched GPU Instanced Cross-Hatched Ink Shadows
+    // (Eliminates shadow-acne on first-person weapons/arms AND doubles WebGL frame rate!)
+    renderer.shadowMap.enabled = false;
 
     mountEl.innerHTML = '';
     mountEl.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf4efe1);
-    scene.fog = new THREE.FogExp2(0xf4efe1, 0.0012);
+    scene.fog = new THREE.FogExp2(0xf4efe1, 0.0008);
 
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
     pmremGenerator.dispose();
 
-    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0xd6d3d1, 0.98);
-    hemiLight.position.set(0, 95, 0);
+    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0xd6d3d1, 1.05);
+    hemiLight.position.set(0, 120, 0);
     scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.32);
-    keyLight.position.set(55, 110, 48);
-    keyLight.castShadow = !isSoftwareGl;
-    keyLight.shadow.mapSize.set(1024, 1024);
-    keyLight.shadow.camera.near = 2;
-    keyLight.shadow.camera.far = 320;
-    const d = 135;
-    keyLight.shadow.camera.left = -d;
-    keyLight.shadow.camera.right = d;
-    keyLight.shadow.camera.top = d;
-    keyLight.shadow.camera.bottom = -d;
-    keyLight.shadow.bias = -0.0005;
-    keyLight.shadow.normalBias = 0.02;
+    const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.25);
+    keyLight.position.set(65, 130, 55);
     scene.add(keyLight);
 
     const camera = new THREE.PerspectiveCamera(
       72,
       (mountEl.clientWidth || window.innerWidth) / (mountEl.clientHeight || window.innerHeight),
       0.1,
-      1200
+      2200
     );
     camera.rotation.order = 'YXZ';
     scene.add(camera);
 
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
-    const outlineMat = createBoilingOutlineMaterial(0.036);
+    const outlineMat = createBoilingOutlineMaterial(0.022, 0.0025);
     const charcoalTex = createCharcoalStickmanTexture(maxAniso);
     const graphPaperTex = createGraphPaperTexture(maxAniso);
     const hatchShadowTex = createHatchShadowTexture();
@@ -442,12 +432,12 @@ export default function App() {
       'Bianchetto_Kid',
     ];
     const botSpawns: [number, number][] = [
-      [-14, -15],
-      [-6, -10],
+      [-14.2, -9.6],
+      [-4.2, -13.2],
+      [0.6, -14.6],
+      [1.2, -8.4],
       [34, -38],
       [-38, 36],
-      [38, 38],
-      [-28, -28],
     ];
     const bots: StickmanActor[] = botSpawns.map(([sx, sz], idx) => {
       const actor = createStickmanActor(
@@ -459,6 +449,15 @@ export default function App() {
         outlineMat,
         charcoalTex
       );
+      // Give the 4th bot an initial comic hit burst so the title screen matches the screenshot action!
+      if (idx === 3) {
+        actor.hitPopTimer = 999;
+        actor.hitStarsGroup.visible = true;
+      }
+      if (idx === 0) {
+        actor.muzzlePopTimer = 999;
+        actor.muzzleFlashGroup.visible = true;
+      }
       scene.add(actor.group);
       return actor;
     });
@@ -467,10 +466,10 @@ export default function App() {
 
     // Player State (Starts in Lo Studio / La Scrivania looking at the screenshot scene!)
     const player = {
-      pos: new THREE.Vector3(-4.5, 0, -1.2),
+      pos: new THREE.Vector3(-4.2, 0, -1.0),
       vel: new THREE.Vector3(0, 0, 0),
-      yaw: 0.42,
-      pitch: -0.06,
+      yaw: 0.44,
+      pitch: -0.12,
       eyeHeight: 1.68,
       grounded: true,
       coyoteTimer: 0,
@@ -676,6 +675,23 @@ export default function App() {
           }
         });
 
+        // Also blast nearby Interactive Kinetic Props with melee swings!
+        for (let kIdx = 0; kIdx < currentArena.kineticProps.length; kIdx++) {
+          const kp = currentArena.kineticProps[kIdx];
+          const dx = kp.position.x - player.pos.x;
+          const dz = kp.position.z - player.pos.z;
+          const distSq = dx * dx + dz * dz;
+          if (distSq < reach * reach && distSq > 0.001) {
+            const invD = 1 / Math.sqrt(distSq);
+            kp.velocity.set(dx * invD * 22, 8.5, dz * invD * 22);
+            kp.rotVel.set(
+              (Math.random() - 0.5) * 14,
+              (Math.random() - 0.5) * 14,
+              (Math.random() - 0.5) * 14
+            );
+          }
+        }
+
         if (spec.id === 'taglierino' && stateRef.current.bossMode === 'padrone') {
           damageBossPadrone(14, 'Hai squarciato i cuscini col Taglierino facendo volare piume!');
         }
@@ -726,6 +742,9 @@ export default function App() {
       hitDir: THREE.Vector3
     ) => {
       bot.hp -= spec.damage;
+      // Trigger 3D Comic Starburst + Colored Stars on chest impact (like the right-side stickman in the screenshot!)
+      bot.hitPopTimer = 0.55;
+      bot.hitStarsGroup.visible = true;
 
       if (spec.id === 'righello') {
         bot.redPenMark.visible = true;
@@ -788,10 +807,14 @@ export default function App() {
       bot.gluePuddle.visible = false;
       bot.whiteoutSplat.visible = false;
       bot.redPenMark.visible = false;
+      bot.hitPopTimer = 0;
+      bot.hitStarsGroup.visible = false;
+      bot.muzzlePopTimer = 0;
+      bot.muzzleFlashGroup.visible = false;
       bot.group.rotation.set(0, 0, 0);
       bot.upperGroup.position.set(0, 0.95, 0);
       bot.upperGroup.rotation.set(0, 0, 0);
-      bot.headGroup.position.set(0, 1.28, 0);
+      bot.headGroup.position.set(0, 1.24, 0);
       bot.headGroup.rotation.set(0, 0, 0);
     };
 
@@ -1158,8 +1181,9 @@ export default function App() {
         player.vel.y -= 26.0 * dt;
 
         player.pos.addScaledVector(player.vel, dt);
-        player.pos.x = THREE.MathUtils.clamp(player.pos.x, -372, 372);
-        player.pos.z = THREE.MathUtils.clamp(player.pos.z, -372, 372);
+        const maxCoord = currentArena.worldHalfExtent;
+        player.pos.x = THREE.MathUtils.clamp(player.pos.x, -maxCoord, maxCoord);
+        player.pos.z = THREE.MathUtils.clamp(player.pos.z, -maxCoord, maxCoord);
 
         // Update current room indicator based on quadrant
         const newRoom: HouseRoom =
@@ -1352,33 +1376,41 @@ export default function App() {
         );
         camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
 
-        // Distinct 3D Viewmodel Animations per Weapon Category!
+        // Distinct 3D Viewmodel Animations per Weapon Category + 3D Comic Muzzle Flash!
         const activeSpec = WEAPONS_ARSENAL.find((w) => w.id === stateRef.current.weaponId)!;
         const animP = stateRef.current.attackAnimTimer / 0.28; // 1 -> 0 during attack
         const reloadTilt = stateRef.current.reloading ? -0.65 : 0;
 
+        const isRangedFire =
+          activeSpec.projectileSpeed > 0 && stateRef.current.attackAnimTimer > 0.14;
+        viewmodel.muzzleFlash.visible = isRangedFire;
+        if (isRangedFire) {
+          viewmodel.muzzleFlash.rotation.z = elapsed * 25;
+          viewmodel.muzzleFlash.scale.setScalar(0.34 + Math.sin(elapsed * 60) * 0.08);
+        }
+
         if (activeSpec.animType === 'swing_wide' || activeSpec.animType === 'heavy_smash') {
           viewmodel.weaponPivot.rotation.set(
-            0.08 - Math.sin(animP * Math.PI) * 0.95 + reloadTilt,
-            -0.24 + Math.sin(animP * Math.PI) * 1.1,
-            0.04
+            0.05 - Math.sin(animP * Math.PI) * 0.95 + reloadTilt,
+            -0.38 + Math.sin(animP * Math.PI) * 1.1,
+            0.06
           );
         } else if (activeSpec.animType === 'swing_fast') {
           viewmodel.weaponPivot.rotation.set(
-            0.08 - Math.sin(animP * Math.PI) * 0.75,
-            -0.24 + Math.sin(animP * Math.PI) * 0.55,
-            0.04
+            0.05 - Math.sin(animP * Math.PI) * 0.75,
+            -0.38 + Math.sin(animP * Math.PI) * 0.55,
+            0.06
           );
         } else if (activeSpec.animType === 'thrust') {
           // Righello lunge thrust!
           viewmodel.weaponPivot.position.set(
-            0.1,
-            0.04,
+            0.14,
+            0.02,
             -0.06 - Math.sin(animP * Math.PI) * 0.36
           );
         } else {
-          viewmodel.weaponPivot.position.set(0.1, 0.04, -0.06 + animP * 0.09);
-          viewmodel.weaponPivot.rotation.set(0.08 + animP * 0.18 + reloadTilt, -0.24, 0.04);
+          viewmodel.weaponPivot.position.set(0.14, 0.02, -0.06 + animP * 0.09);
+          viewmodel.weaponPivot.rotation.set(0.05 + animP * 0.18 + reloadTilt, -0.38, 0.06);
         }
       }
 
@@ -1577,8 +1609,64 @@ export default function App() {
             continue;
           }
         }
-        prop.position.y = THREE.MathUtils.damp(prop.position.y, baseY, 10, dt);
-        prop.rotation.z = THREE.MathUtils.damp(prop.rotation.z, baseRotZ, 10, dt);
+        if (Math.abs(prop.position.y - baseY) > 0.001) {
+          prop.position.y = THREE.MathUtils.damp(prop.position.y, baseY, 10, dt);
+          prop.rotation.z = THREE.MathUtils.damp(prop.rotation.z, baseRotZ, 10, dt);
+        }
+      }
+
+      // Active-Sector Kinetic Physics Props (Dominoes, Cans, Erasers & Dice that react when kicked or shot!)
+      // Distance-culled at 95m so distant props cost zero CPU time!
+      for (let kIdx = 0; kIdx < currentArena.kineticProps.length; kIdx++) {
+        const kp = currentArena.kineticProps[kIdx];
+        const dxP = kp.position.x - player.pos.x;
+        const dzP = kp.position.z - player.pos.z;
+        const distPlayerSq = dxP * dxP + dzP * dzP;
+
+        if (distPlayerSq > 9025 && kp.velocity.lengthSq() < 0.01) {
+          continue; // Active sector culling (> 95m away and at rest)
+        }
+
+        // Player kick impulse when running into a kinetic prop
+        const kickRadius = kp.radius + 0.85;
+        if (distPlayerSq < kickRadius * kickRadius && distPlayerSq > 0.0001) {
+          const invD = 1 / Math.sqrt(distPlayerSq);
+          kp.velocity.x = dxP * invD * 14 + player.vel.x * 0.45;
+          kp.velocity.z = dzP * invD * 14 + player.vel.z * 0.45;
+          kp.velocity.y = 5.8;
+          kp.rotVel.set(
+            (Math.random() - 0.5) * 10,
+            (Math.random() - 0.5) * 10,
+            (Math.random() - 0.5) * 10
+          );
+        }
+
+        if (isCatPurringNow && distPlayerSq < 3600 && kp.position.y <= kp.baseY + 0.05) {
+          kp.velocity.y = 2.8 + Math.random() * 2.2;
+          kp.rotVel.z = (Math.random() - 0.5) * 6;
+        }
+
+        if (kp.velocity.lengthSq() > 0.002 || kp.position.y > kp.baseY) {
+          kp.velocity.y -= 24.0 * dt;
+          kp.position.addScaledVector(kp.velocity, dt);
+          kp.mesh.rotation.x += kp.rotVel.x * dt;
+          kp.mesh.rotation.y += kp.rotVel.y * dt;
+          kp.mesh.rotation.z += kp.rotVel.z * dt;
+
+          if (kp.position.y <= kp.baseY) {
+            kp.position.y = kp.baseY;
+            if (Math.abs(kp.velocity.y) > 2.2) {
+              kp.velocity.y = Math.abs(kp.velocity.y) * 0.42;
+            } else {
+              kp.velocity.y = 0;
+              kp.mesh.rotation.x = THREE.MathUtils.damp(kp.mesh.rotation.x, 0, 10, dt);
+              kp.mesh.rotation.z = THREE.MathUtils.damp(kp.mesh.rotation.z, 0, 10, dt);
+            }
+            kp.velocity.x = THREE.MathUtils.damp(kp.velocity.x, 0, 6, dt);
+            kp.velocity.z = THREE.MathUtils.damp(kp.velocity.z, 0, 6, dt);
+            kp.rotVel.multiplyScalar(0.85);
+          }
+        }
       }
 
       // Toilet Flush Vortex Combo in Il Bagno
@@ -1709,6 +1797,37 @@ export default function App() {
           }
         }
 
+        // O(1) Spatial Grid Wall & Book Corridor Bounce for Projectiles
+        const projCellBoxes = currentArena.queryNearbyColliders(_projNext.x, _projNext.z);
+        let hitWall = false;
+        for (let bIdx = 0; bIdx < projCellBoxes.length; bIdx++) {
+          const box = projCellBoxes[bIdx];
+          if (
+            _projNext.x >= box.minX &&
+            _projNext.x <= box.maxX &&
+            _projNext.z >= box.minZ &&
+            _projNext.z <= box.maxZ &&
+            _projNext.y >= (box.bottomY ?? 0) &&
+            _projNext.y <= box.topY
+          ) {
+            if (p.bouncesLeft > 0) {
+              p.bouncesLeft--;
+              p.bounceCount++;
+              p.velocity.x *= -0.85;
+              p.velocity.z *= -0.85;
+              foleyAudio.playBoing(p.bounceCount);
+            } else if (p.weaponId === 'forchetta') {
+              p.isStuckFork = true;
+            } else {
+              p.active = false;
+              p.mesh.visible = false;
+              hitWall = true;
+            }
+            break;
+          }
+        }
+        if (hitWall) continue;
+
         p.position.copy(_projNext);
 
         // Gomma da Cancellare erases enemy projectiles mid-air!
@@ -1725,6 +1844,18 @@ export default function App() {
         }
 
         if (p.fromPlayer) {
+          // Knock kinetic props when hit by projectiles!
+          for (let kIdx = 0; kIdx < currentArena.kineticProps.length; kIdx++) {
+            const kp = currentArena.kineticProps[kIdx];
+            const kdx = p.position.x - kp.position.x;
+            const kdz = p.position.z - kp.position.z;
+            if (kdx * kdx + kdz * kdz < 1.2 && Math.abs(p.position.y - kp.position.y) < 1.4) {
+              kp.velocity.copy(p.velocity).multiplyScalar(0.55).setY(7.5);
+              kp.rotVel.set(10, 8, -10);
+              break;
+            }
+          }
+
           for (const bot of bots) {
             if (bot.state !== 'alive') continue;
             const dx = p.position.x - bot.position.x;
@@ -1773,10 +1904,29 @@ export default function App() {
         }
       }
 
-      // Update Stickman Bots + Dotted Footstep Ink Trail
+      // Update Stickman Bots + Articulated Knees/Elbows + 3D Comic Starbursts + Dotted Footstep Ink Trail
       const quantizedTime12 = Math.floor(elapsed * 12) / 12;
 
       bots.forEach((bot, idx) => {
+        // Update 3D Comic Hit Starburst & Muzzle Flash timers
+        if (stateRef.current.phase === 'playing') {
+          if (bot.hitPopTimer > 0) {
+            if (bot.hitPopTimer > 10) bot.hitPopTimer = 0.45;
+            bot.hitPopTimer -= dt;
+            bot.hitStarsGroup.visible = bot.hitPopTimer > 0;
+            bot.hitStarsGroup.rotation.z = quantizedTime12 * 8;
+          }
+          if (bot.muzzlePopTimer > 0) {
+            if (bot.muzzlePopTimer > 10) bot.muzzlePopTimer = 0.25;
+            bot.muzzlePopTimer -= dt;
+            bot.muzzleFlashGroup.visible = bot.muzzlePopTimer > 0;
+          }
+        } else {
+          // On title screen, showcase the exact screenshot poses!
+          bot.hitStarsGroup.visible = idx === 3;
+          bot.muzzleFlashGroup.visible = idx === 0;
+        }
+
         if (bot.state === 'alive') {
           if (bot.gluedTimer > 0) {
             bot.gluedTimer -= dt;
@@ -1808,17 +1958,56 @@ export default function App() {
             dt
           );
 
-          bot.position.addScaledVector(bot.velocity, dt);
-          bot.position.x = THREE.MathUtils.clamp(bot.position.x, -360, 360);
-          bot.position.z = THREE.MathUtils.clamp(bot.position.z, -360, 360);
+          if (stateRef.current.phase === 'playing') {
+            bot.position.addScaledVector(bot.velocity, dt);
+          }
+          const botMax = currentArena.worldHalfExtent - 12;
+          bot.position.x = THREE.MathUtils.clamp(bot.position.x, -botMax, botMax);
+          bot.position.z = THREE.MathUtils.clamp(bot.position.z, -botMax, botMax);
+
+          // O(1) Spatial Grid collision pushout for Bots around Book Corridors & HVAC Ducts
+          const botBoxes = currentArena.queryNearbyColliders(bot.position.x, bot.position.z);
+          for (let bIdx = 0; bIdx < botBoxes.length; bIdx++) {
+            const box = botBoxes[bIdx];
+            if (
+              (box.bottomY ?? 0) <= 0.5 &&
+              box.topY > 1.0 &&
+              bot.position.x > box.minX - 0.45 &&
+              bot.position.x < box.maxX + 0.45 &&
+              bot.position.z > box.minZ - 0.45 &&
+              bot.position.z < box.maxZ + 0.45
+            ) {
+              if (bot.position.x < (box.minX + box.maxX) * 0.5) bot.position.x = box.minX - 0.45;
+              else bot.position.x = box.maxX + 0.45;
+            }
+          }
           bot.group.rotation.y = bot.rotationY;
 
-          const swing =
-            bot.gluedTimer > 0 ? 0 : Math.sin(quantizedTime12 * 14 + idx * 1.7) * 0.78;
+          // 12-FPS Hand-Drawn Articulated Stickman Gait (Thigh + Bent Knee + Forward Torso Lean + Bent Elbows!)
+          const phase12 = quantizedTime12 * 14 + idx * 1.7;
+          const swing = bot.gluedTimer > 0 ? 0 : Math.sin(phase12) * 0.88;
           bot.leftLeg.rotation.x = swing;
           bot.rightLeg.rotation.x = -swing;
-          bot.leftArm.rotation.x = -swing * 0.65;
-          bot.rightArm.rotation.x = swing * 0.45;
+          // Knees bend backward naturally during stride like the running stickman in the center of the screenshot!
+          bot.leftKnee.rotation.x = Math.max(0.18, -Math.sin(phase12 - 0.7) * 1.05);
+          bot.rightKnee.rotation.x = Math.max(0.18, Math.sin(phase12 - 0.7) * 1.05);
+
+          // Forward sprint torso lean or stagger back when hit
+          if (bot.hitPopTimer > 0) {
+            bot.upperGroup.rotation.x = -0.35;
+            bot.upperGroup.rotation.z = 0.22;
+            bot.leftArm.rotation.x = -0.95;
+            bot.leftArm.rotation.z = 0.65;
+            bot.leftElbow.rotation.x = -0.45;
+          } else {
+            bot.upperGroup.rotation.x = bot.gluedTimer > 0 ? 0 : 0.22;
+            bot.upperGroup.rotation.z = Math.cos(phase12) * 0.06;
+            bot.leftArm.rotation.x = -swing * 0.75;
+            bot.leftArm.rotation.z = 0.22;
+            bot.leftElbow.rotation.x = -0.68;
+          }
+          bot.rightArm.rotation.x = -0.38 + swing * 0.25;
+          bot.rightElbow.rotation.x = -0.52;
 
           const botSpeedSq =
             bot.velocity.x * bot.velocity.x + bot.velocity.z * bot.velocity.z;
@@ -1845,6 +2034,8 @@ export default function App() {
             bot.shootCooldown -= dt;
             if (bot.shootCooldown <= 0 && distToPlayer < 22) {
               bot.shootCooldown = 2.6 + Math.random() * 2.0;
+              bot.muzzlePopTimer = 0.22;
+              bot.muzzleFlashGroup.visible = true;
               const botProj = projectilePool.find((p) => !p.active);
               if (botProj) {
                 botProj.active = true;
@@ -1982,23 +2173,26 @@ export default function App() {
 
       {/* 5. SCREENSHOT-IDENTICAL TOP HUD (P1 Torn Strip, 02:14 Torn Card, P2 Torn Strip + Temperino Tag) */}
       <div className="absolute inset-x-0 top-0 p-3 md:p-4 flex items-start justify-between pointer-events-none z-20">
-        {/* Top-Left: P1 Torn Paper Strip with Charcoal Sphere & Red/Graphite Pencil Bar */}
+        {/* Top-Left: P1 Torn Paper Strip with Charcoal Sphere & Red/Graphite Pencil-Hatched Bar */}
         <div className="sketch-box-sm px-3 py-2 bg-[#f5f2e8] flex items-center gap-2.5 pointer-events-auto">
           <div className="flex flex-col items-center">
             <div
               className="w-7 h-7 rounded-full border-2 border-zinc-950"
               style={{
-                background: 'radial-gradient(circle at 32% 30%, #71717a, #18181b 70%)',
+                background: 'radial-gradient(circle at 32% 30%, #9ca3af, #18181b 72%)',
               }}
             />
-            <span className="font-hand font-bold text-base leading-none text-zinc-950 mt-0.5">
+            <span
+              className="font-hand font-bold text-lg leading-none text-zinc-950 mt-0.5"
+              style={{ textShadow: '1px 1px 0px #ffffff' }}
+            >
               P1
             </span>
           </div>
           <div className="flex flex-col gap-1">
-            <div className="w-36 md:w-44 h-5 border-2 border-zinc-950 bg-[#52525b] overflow-hidden relative">
+            <div className="w-36 md:w-44 h-5 border-2 border-zinc-950 pencil-hatch-graphite overflow-hidden relative rounded-[2px]">
               <div
-                className="h-full bg-[#f87171] border-r-2 border-zinc-950 transition-all duration-150"
+                className="h-full pencil-hatch-red border-r-2 border-zinc-950 transition-all duration-150"
                 style={{ width: `${(playerHp / 6) * 100}%` }}
               />
             </div>
@@ -2016,7 +2210,7 @@ export default function App() {
             <span
               className="font-hand font-bold text-3xl md:text-4xl tracking-wider text-zinc-950 tabular-nums"
               style={{
-                textShadow: '1px 1px 0px #ffffff, -1px -1px 0px #ffffff',
+                textShadow: '1.5px 1.5px 0px #ffffff, -1px -1px 0px #ffffff',
               }}
             >
               {formattedTimer}
@@ -2033,7 +2227,7 @@ export default function App() {
               <div className="w-28 h-3 border border-zinc-900 bg-white overflow-hidden">
                 <div
                   className={`h-full ${
-                    bossMode === 'padrone' ? 'bg-rose-500' : 'bg-amber-400'
+                    bossMode === 'padrone' ? 'pencil-hatch-red' : 'pencil-hatch-yellow'
                   }`}
                   style={{ width: `${bossMeter}%` }}
                 />
@@ -2066,52 +2260,55 @@ export default function App() {
         <div className="flex items-start gap-2.5 pointer-events-auto">
           <button
             onClick={() => setGddOpen(true)}
-            className="sketch-box-sm px-3 py-2 bg-amber-300 hover:bg-amber-400 text-zinc-950 font-hand font-bold text-xs md:text-sm cursor-pointer whitespace-nowrap shrink-0"
+            className="sketch-box-sm px-3 py-2 pencil-hatch-yellow hover:brightness-95 text-zinc-950 font-hand font-bold text-xs md:text-sm cursor-pointer whitespace-nowrap shrink-0"
           >
             GDD & 17 Armi
           </button>
 
           <div className="flex flex-col items-end">
             <div className="sketch-box-sm px-3 py-2 bg-[#f5f2e8] hidden sm:flex items-center gap-2.5">
-              <div className="w-36 md:w-44 h-5 border-2 border-zinc-950 bg-[#52525b] overflow-hidden flex justify-end">
-                <div className="h-full bg-[#fde047] border-l-2 border-zinc-950 w-1/3" />
+              <div className="w-36 md:w-44 h-5 border-2 border-zinc-950 pencil-hatch-graphite overflow-hidden flex justify-end rounded-[2px]">
+                <div className="h-full pencil-hatch-yellow border-l-2 border-zinc-950 w-1/3" />
               </div>
               <div className="flex flex-col items-center">
                 <div
                   className="w-7 h-7 rounded-full border-2 border-zinc-950"
                   style={{
-                    background: 'radial-gradient(circle at 32% 30%, #71717a, #18181b 70%)',
+                    background: 'radial-gradient(circle at 32% 30%, #9ca3af, #18181b 72%)',
                   }}
                 />
-                <span className="font-hand font-bold text-base leading-none text-zinc-950 mt-0.5">
+                <span
+                  className="font-hand font-bold text-lg leading-none text-zinc-950 mt-0.5"
+                  style={{ textShadow: '1px 1px 0px #ffffff' }}
+                >
                   P2
                 </span>
               </div>
             </div>
 
             {/* Iconic Hand-Drawn Pencil Sharpener ("Temperino") Tag hanging under P2 (from screenshot!) */}
-            <div className="hidden sm:flex items-center gap-1.5 sketch-box-sm px-2.5 py-1 bg-[#f5f2e8] -mt-1 mr-8 rotate-[-4deg]">
-              <svg width="26" height="18" viewBox="0 0 26 18">
+            <div className="hidden sm:flex items-center gap-1.5 sketch-box-sm px-2.5 py-1 bg-[#f5f2e8] -mt-1 mr-8 rotate-[-5deg]">
+              <svg width="28" height="19" viewBox="0 0 28 19">
                 <rect
                   x="2"
                   y="2"
-                  width="22"
-                  height="14"
+                  width="24"
+                  height="15"
                   rx="2"
                   fill="#d4d4d8"
                   stroke="#141413"
-                  strokeWidth="2"
+                  strokeWidth="2.2"
                 />
                 <rect
                   x="6"
                   y="5"
-                  width="14"
-                  height="8"
+                  width="16"
+                  height="9"
                   fill="#71717a"
                   stroke="#141413"
-                  strokeWidth="1.5"
+                  strokeWidth="1.6"
                 />
-                <circle cx="13" cy="9" r="2" fill="#141413" />
+                <circle cx="14" cy="9.5" r="2.2" fill="#141413" />
               </svg>
               <span className="text-[11px] font-hand font-bold text-zinc-900 tabular-nums">
                 {playerScore} - {botScore}
@@ -2121,10 +2318,10 @@ export default function App() {
         </div>
       </div>
 
-      {/* 6. SCREENSHOT-IDENTICAL BOTTOM-LEFT & BOTTOM-RIGHT HEARTS + PAWN BARS */}
-      <div className="absolute bottom-16 left-3 z-20 pointer-events-none flex flex-col gap-1.5">
-        {/* Green Pencil Box with 3 Red Hearts */}
-        <div className="sketch-box-sm px-3 py-1.5 bg-[#86efac] flex items-center gap-2 w-fit">
+      {/* 6. SCREENSHOT-IDENTICAL BOTTOM-LEFT & BOTTOM-RIGHT HEARTS + STICKMAN PAWN BARS */}
+      <div className="absolute bottom-8 left-3 z-20 pointer-events-none flex flex-col gap-1.5">
+        {/* Green Pencil-Hatched Box with 3 Red Hearts */}
+        <div className="sketch-box-sm px-3 py-1.5 pencil-hatch-green flex items-center gap-2 w-fit">
           {[0, 1, 2].map((heartIdx) => {
             const heartHp = Math.max(0, Math.min(2, playerHp - heartIdx * 2));
             return (
@@ -2148,12 +2345,33 @@ export default function App() {
           })}
         </div>
 
-        {/* Bottom-Left Stickman Pawn + Green Stamina / Sprint Bar (from screenshot!) */}
+        {/* Bottom-Left 3D Stickman Pawn + Green Pencil-Hatched Bar (exact match to screenshot!) */}
         <div className="sketch-box-sm px-2.5 py-1 bg-[#fbf9f3] flex items-center gap-2 w-48 md:w-56">
-          <div className="w-6 h-6 rounded-full bg-zinc-900 border-2 border-zinc-950 shrink-0" />
-          <div className="flex-1 h-4 bg-zinc-200 border border-zinc-800 overflow-hidden">
+          <svg width="24" height="28" viewBox="0 0 24 28" className="shrink-0 -my-1">
+            <defs>
+              <radialGradient id="pawnLeftGrad" cx="35%" cy="30%" r="65%">
+                <stop offset="0%" stopColor="#9ca3af" />
+                <stop offset="100%" stopColor="#141413" />
+              </radialGradient>
+            </defs>
+            <path
+              d="M5 26 C5 18 19 18 19 26 Z"
+              fill="url(#pawnLeftGrad)"
+              stroke="#141413"
+              strokeWidth="2.2"
+            />
+            <circle
+              cx="12"
+              cy="10"
+              r="7.5"
+              fill="url(#pawnLeftGrad)"
+              stroke="#141413"
+              strokeWidth="2.2"
+            />
+          </svg>
+          <div className="flex-1 h-4 bg-[#f5f2e8] border-2 border-zinc-900 overflow-hidden">
             <div
-              className="h-full bg-[#86efac] transition-all duration-100"
+              className="h-full pencil-hatch-green border-r-2 border-zinc-900 transition-all duration-100"
               style={{ width: `${stamina}%` }}
             />
           </div>
@@ -2167,9 +2385,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* Bottom-Right: Orange Pencil Box with 3 Hearts + Pink Ammo Bar with Right Stickman Pawn (from screenshot!) */}
-      <div className="absolute bottom-16 right-3 z-20 pointer-events-none flex flex-col items-end gap-1.5">
-        <div className="sketch-box-sm px-3 py-1.5 bg-[#fdba74] flex items-center gap-2 w-fit">
+      {/* Bottom-Right: Orange Pencil-Hatched Box with 3 Hearts + Pink Pencil-Hatched Bar with Stickman Pawn (from screenshot!) */}
+      <div className="absolute bottom-8 right-3 z-20 pointer-events-none flex flex-col items-end gap-1.5">
+        <div className="sketch-box-sm px-3 py-1.5 pencil-hatch-orange flex items-center gap-2 w-fit">
           {[0, 1, 2].map((idx) => (
             <svg key={idx} viewBox="0 0 32 32" className="w-6 h-6">
               <path
@@ -2187,9 +2405,9 @@ export default function App() {
             <div className="text-[11px] font-hand font-bold text-zinc-950 truncate">
               [{currentWeaponSpec.keyLabel}] {currentWeaponSpec.name}
             </div>
-            <div className="h-3.5 bg-zinc-200 border border-zinc-800 overflow-hidden mt-0.5">
+            <div className="h-4 bg-[#f5f2e8] border-2 border-zinc-900 overflow-hidden mt-0.5 flex justify-end">
               <div
-                className="h-full bg-[#fda4af] transition-all duration-150"
+                className="h-full pencil-hatch-pink border-l-2 border-zinc-900 transition-all duration-150"
                 style={{
                   width:
                     currentWeaponSpec.magSize === -1
@@ -2206,7 +2424,28 @@ export default function App() {
               ? '∞'
               : `${ammoCounts[activeWeaponId]}/${currentWeaponSpec.magSize}`}
           </div>
-          <div className="w-6 h-6 rounded-full bg-zinc-900 border-2 border-zinc-950 shrink-0" />
+          <svg width="24" height="28" viewBox="0 0 24 28" className="shrink-0 -my-1">
+            <defs>
+              <radialGradient id="pawnRightGrad" cx="35%" cy="30%" r="65%">
+                <stop offset="0%" stopColor="#9ca3af" />
+                <stop offset="100%" stopColor="#141413" />
+              </radialGradient>
+            </defs>
+            <path
+              d="M5 26 C5 18 19 18 19 26 Z"
+              fill="url(#pawnRightGrad)"
+              stroke="#141413"
+              strokeWidth="2.2"
+            />
+            <circle
+              cx="12"
+              cy="10"
+              r="7.5"
+              fill="url(#pawnRightGrad)"
+              stroke="#141413"
+              strokeWidth="2.2"
+            />
+          </svg>
         </div>
       </div>
 

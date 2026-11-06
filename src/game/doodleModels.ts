@@ -9,13 +9,22 @@ export interface StickmanActor {
   lowerGroup: THREE.Group;
   headGroup: THREE.Group;
   leftLeg: THREE.Group;
+  leftKnee: THREE.Group;
   rightLeg: THREE.Group;
+  rightKnee: THREE.Group;
   leftArm: THREE.Group;
+  leftElbow: THREE.Group;
   rightArm: THREE.Group;
+  rightElbow: THREE.Group;
   gluePuddle: THREE.Mesh;
   whiteoutSplat: THREE.Mesh;
   redPenMark: THREE.Mesh;
   corkHelmet: THREE.Mesh;
+  notebookShield: THREE.Group;
+  muzzleFlashGroup: THREE.Group;
+  hitStarsGroup: THREE.Group;
+  hitPopTimer: number;
+  muzzlePopTimer: number;
   position: THREE.Vector3;
   velocity: THREE.Vector3;
   rotationY: number;
@@ -52,30 +61,42 @@ export interface ColliderBox {
 
 export const boilingTimeUniform = { value: 0 };
 
-export function createBoilingOutlineMaterial(thickness = 0.036): THREE.ShaderMaterial {
+/**
+ * Crisp, well-defined hand-drawn ink outline shader.
+ * Uses smooth sinusoidal boiling (no spiky vertex splitting on cube corners!)
+ * and respects non-uniform scale so small and scaled parts always have a clean, uniform contour.
+ */
+export function createBoilingOutlineMaterial(
+  thickness = 0.022,
+  jitterAmount = 0.0025
+): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: boilingTimeUniform,
       uOutlineWidth: { value: thickness },
+      uJitter: { value: jitterAmount },
     },
     vertexShader: `
       uniform float uTime;
       uniform float uOutlineWidth;
-      float hash13(vec3 p3) {
-        p3 = fract(p3 * 0.1031);
-        p3 += dot(p3, p3.zyx + 31.32);
-        return fract((p3.x + p3.y) * p3.z);
-      }
+      uniform float uJitter;
       void main() {
         float steppedTime = floor(uTime * 12.0);
-        float jitter = (hash13(position + vec3(steppedTime)) - 0.5) * 0.016;
-        vec3 displaced = position + normal * (uOutlineWidth + jitter);
+        // Smooth continuous wave instead of discontinuous hash so box corners never split open
+        float wave = sin(position.x * 9.0 + position.y * 11.0 + position.z * 7.0 + steppedTime * 2.1) * uJitter;
+        // Compensate for per-axis scale so scaled meshes keep a uniform ink border
+        vec3 scaleComp = vec3(
+          1.0 / max(length(modelMatrix[0].xyz), 0.08),
+          1.0 / max(length(modelMatrix[1].xyz), 0.08),
+          1.0 / max(length(modelMatrix[2].xyz), 0.08)
+        );
+        vec3 displaced = position + normalize(normal) * scaleComp * (uOutlineWidth + wave);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
       }
     `,
     fragmentShader: `
       void main() {
-        gl_FragColor = vec4(0.06, 0.06, 0.05, 1.0);
+        gl_FragColor = vec4(0.07, 0.07, 0.06, 1.0);
       }
     `,
     side: THREE.BackSide,
@@ -83,7 +104,7 @@ export function createBoilingOutlineMaterial(thickness = 0.036): THREE.ShaderMat
 }
 
 /**
- * Charcoal-shaded texture for Stickman heads & limbs (matches screenshot's hand-shaded black graphite look!)
+ * High-contrast hand-shaded charcoal texture for Stickman heads, limbs, and 1st-person arms
  */
 export function createCharcoalStickmanTexture(maxAnisotropy: number): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -91,21 +112,21 @@ export function createCharcoalStickmanTexture(maxAnisotropy: number): THREE.Canv
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
 
-  const grad = ctx.createRadialGradient(88, 76, 12, 128, 128, 140);
-  grad.addColorStop(0, '#6b6b68');
-  grad.addColorStop(0.28, '#2b2b29');
-  grad.addColorStop(0.75, '#161614');
-  grad.addColorStop(1, '#0c0c0b');
+  const grad = ctx.createRadialGradient(88, 76, 12, 128, 128, 148);
+  grad.addColorStop(0, '#686864');
+  grad.addColorStop(0.3, '#2d2d2a');
+  grad.addColorStop(0.75, '#171715');
+  grad.addColorStop(1, '#0e0e0d');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 256, 256);
 
-  // Diagonal charcoal pencil strokes
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.lineWidth = 2;
+  // Clean diagonal charcoal pencil strokes
+  ctx.strokeStyle = 'rgba(245, 242, 232, 0.14)';
+  ctx.lineWidth = 2.0;
   for (let i = -256; i < 256; i += 6) {
     ctx.beginPath();
     ctx.moveTo(i, 0);
-    ctx.lineTo(i + 256, 256);
+    ctx.lineTo(i + 240, 256);
     ctx.stroke();
   }
 
@@ -115,30 +136,30 @@ export function createCharcoalStickmanTexture(maxAnisotropy: number): THREE.Canv
   return tex;
 }
 
+/**
+ * Clean, flat, un-crumpled sketch paper texture with subtle paper tooth & light quadretti lines
+ */
 export function createGraphPaperTexture(maxAnisotropy: number): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
 
-  // Crumpled warm sketch paper base (matches screenshot!)
-  ctx.fillStyle = '#f5f2e9';
+  // Warm ivory drawing paper base (flat & clean, NO crumpled creases!)
+  ctx.fillStyle = '#f6f3ea';
   ctx.fillRect(0, 0, 512, 512);
 
-  // Subtle crumpled paper crease shadows
-  ctx.strokeStyle = 'rgba(120, 113, 100, 0.11)';
-  ctx.lineWidth = 10;
-  ctx.beginPath();
-  ctx.moveTo(0, 240);
-  ctx.lineTo(260, 270);
-  ctx.lineTo(512, 220);
-  ctx.moveTo(250, 0);
-  ctx.lineTo(270, 512);
-  ctx.stroke();
+  // Subtle fine paper tooth speckles
+  ctx.fillStyle = 'rgba(28, 26, 23, 0.022)';
+  for (let i = 0; i < 450; i++) {
+    const px = (i * 73) % 512;
+    const py = (i * 137) % 512;
+    ctx.fillRect(px, py, 2, 2);
+  }
 
-  // Fine quadretti grid lines
-  ctx.strokeStyle = 'rgba(59, 130, 246, 0.16)';
-  ctx.lineWidth = 1.5;
+  // Crisp quadretti grid lines
+  ctx.strokeStyle = 'rgba(59, 130, 246, 0.13)';
+  ctx.lineWidth = 1.2;
   const step = 32;
   for (let x = 0; x <= 512; x += step) {
     ctx.beginPath();
@@ -162,6 +183,9 @@ export function createGraphPaperTexture(maxAnisotropy: number): THREE.CanvasText
   return tex;
 }
 
+/**
+ * Crisp colored-pencil texture with clean diagonal strokes & bold black ink edge border
+ */
 export function createCrossHatchPastelTexture(
   hexColor: string,
   maxAnisotropy: number
@@ -171,12 +195,17 @@ export function createCrossHatchPastelTexture(
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = hexColor;
+  ctx.fillStyle = '#faf8f0';
   ctx.fillRect(0, 0, 256, 256);
 
-  // Colored pencil diagonal texture strokes (identical to screenshot books & Post-its)
-  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-  ctx.lineWidth = 3;
+  ctx.fillStyle = hexColor;
+  ctx.globalAlpha = 0.9;
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.globalAlpha = 1.0;
+
+  // Clean diagonal colored-pencil grain
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+  ctx.lineWidth = 2.2;
   for (let i = -256; i < 256; i += 6) {
     ctx.beginPath();
     ctx.moveTo(i, 0);
@@ -184,17 +213,18 @@ export function createCrossHatchPastelTexture(
     ctx.stroke();
   }
 
-  ctx.strokeStyle = 'rgba(20, 20, 18, 0.24)';
-  ctx.lineWidth = 1.8;
-  for (let i = 0; i < 256; i += 8) {
+  ctx.strokeStyle = 'rgba(18, 18, 16, 0.12)';
+  ctx.lineWidth = 1.6;
+  for (let i = -256; i < 256; i += 7) {
     ctx.beginPath();
-    ctx.moveTo(i, 212 + (i % 13));
-    ctx.lineTo(i + 22, 256);
+    ctx.moveTo(i + 3, 0);
+    ctx.lineTo(i + 259, 256);
     ctx.stroke();
   }
 
+  // Clean black ink border around UV tile so every box face has crisp hand-drawn edges
   ctx.strokeStyle = '#141413';
-  ctx.lineWidth = 7;
+  ctx.lineWidth = 5.5;
   ctx.strokeRect(3, 3, 250, 250);
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -203,6 +233,9 @@ export function createCrossHatchPastelTexture(
   return tex;
 }
 
+/**
+ * Parallel black ink scribble shadow texture (cast on the paper floor under stickmen & props)
+ */
 export function createHatchShadowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
@@ -215,13 +248,12 @@ export function createHatchShadowTexture(): THREE.CanvasTexture {
   ctx.ellipse(64, 64, 58, 42, 0, 0, Math.PI * 2);
   ctx.clip();
 
-  // Sharp parallel pencil hatching shadow lines (exactly like under the stickmen in screenshot!)
-  ctx.strokeStyle = 'rgba(18, 18, 16, 0.68)';
-  ctx.lineWidth = 2.8;
+  ctx.strokeStyle = 'rgba(15, 15, 14, 0.72)';
+  ctx.lineWidth = 3.0;
   for (let i = -128; i < 128; i += 5) {
     ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i + 96, 128);
+    ctx.moveTo(i, 6);
+    ctx.lineTo(i + 88, 122);
     ctx.stroke();
   }
   ctx.restore();
@@ -268,6 +300,11 @@ export function createDottedInkTrailTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+/**
+ * Adds a mesh with a clean BackSide ink outline.
+ * Disables expensive WebGL shadow-map casting/receiving (since we use hand-drawn cross-hatched
+ * floor shadows per GDD), which prevents shadow-acne artifacts on weapons/arms AND doubles FPS!
+ */
 export function addOutlinedMesh(
   parent: THREE.Object3D,
   geometry: THREE.BufferGeometry,
@@ -275,27 +312,78 @@ export function addOutlinedMesh(
   outlineMat: THREE.Material,
   pos: [number, number, number] = [0, 0, 0],
   rot: [number, number, number] = [0, 0, 0],
-  scale: [number, number, number] = [1, 1, 1]
+  scale: [number, number, number] = [1, 1, 1],
+  freezeMatrix = false
 ): THREE.Mesh {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(...pos);
   mesh.rotation.set(...rot);
   mesh.scale.set(...scale);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
 
   const outline = new THREE.Mesh(geometry, outlineMat);
   mesh.add(outline);
+
+  if (freezeMatrix) {
+    mesh.updateMatrix();
+    mesh.matrixAutoUpdate = false;
+    outline.updateMatrix();
+    outline.matrixAutoUpdate = false;
+  }
+
   parent.add(mesh);
   return mesh;
 }
 
 /**
- * Stickman Ragdoll Actor faithful to the attached screenshot:
- * - Solid charcoal-shaded spherical head with pencil specular highlight (no weird eyes)
- * - Tubular charcoal limbs with boiling black ink outline
- * - Crisp white sneakers with black pen laces & sole rim
- * - Optional Cork Helmet ("Tappo di Sughero") & Red Ruler Slash mark
+ * Clean 3D Comic Starburst (used for Muzzle Flashes & Chest Hit Bursts)
+ */
+export function createComicStarburstGroup(outlineMat: THREE.Material): THREE.Group {
+  const group = new THREE.Group();
+  const yellowMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+  const redMat = new THREE.MeshBasicMaterial({ color: 0xf87171 });
+  const blueMat = new THREE.MeshBasicMaterial({ color: 0x60a5fa });
+
+  const spikeGeo = new THREE.ConeGeometry(0.14, 0.52, 4);
+  for (let i = 0; i < 4; i++) {
+    const spike = new THREE.Mesh(spikeGeo, yellowMat);
+    spike.rotation.z = (i * Math.PI) / 2 + 0.35;
+    spike.scale.z = 0.3;
+    group.add(spike);
+  }
+
+  const starGeo = new THREE.OctahedronGeometry(0.11, 0);
+  const starColors = [redMat, yellowMat, blueMat];
+  starColors.forEach((mat, idx) => {
+    const angle = (idx * Math.PI * 2) / starColors.length + 0.2;
+    const star = addOutlinedMesh(
+      group,
+      starGeo,
+      mat,
+      outlineMat,
+      [Math.cos(angle) * 0.48, Math.sin(angle) * 0.48, 0.06],
+      [0, 0, angle],
+      [1, 1, 0.35]
+    );
+    star.matrixAutoUpdate = true;
+  });
+
+  return group;
+}
+
+// Shared Stickman Geometries (allocated once for all bots -> Zero memory bloat!)
+const STICK_THIGH_GEO = new THREE.CylinderGeometry(0.1, 0.09, 0.48, 10);
+const STICK_CALF_GEO = new THREE.CylinderGeometry(0.09, 0.082, 0.48, 10);
+const STICK_JOINT_GEO = new THREE.SphereGeometry(0.095, 8, 8);
+const STICK_SHOE_GEO = new THREE.BoxGeometry(0.32, 0.22, 0.58);
+const STICK_SOLE_GEO = new THREE.BoxGeometry(0.34, 0.06, 0.6);
+const STICK_LACE_GEO = new THREE.BoxGeometry(0.33, 0.028, 0.04);
+const STICK_TORSO_GEO = new THREE.CylinderGeometry(0.14, 0.12, 0.98, 10);
+const STICK_ARM_GEO = new THREE.CylinderGeometry(0.082, 0.075, 0.42, 8);
+const STICK_HAND_GEO = new THREE.SphereGeometry(0.105, 8, 8);
+const STICK_HEAD_GEO = new THREE.SphereGeometry(0.39, 16, 14);
+
+/**
+ * Clean, Well-Defined Stickman Ragdoll Actor
  */
 export function createStickmanActor(
   id: number,
@@ -312,19 +400,20 @@ export function createStickmanActor(
   const blackCharcoalMat = new THREE.MeshStandardMaterial({
     color: 0x222220,
     map: charcoalTex || null,
-    roughness: 0.58,
-    metalness: 0.12,
+    roughness: 0.65,
+    metalness: 0.08,
   });
   const whiteSneakerMat = new THREE.MeshStandardMaterial({
     color: 0xfaf8f2,
-    roughness: 0.4,
+    roughness: 0.45,
     metalness: 0.05,
   });
+  const soleMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d0, roughness: 0.7 });
   const penInkMat = new THREE.MeshBasicMaterial({ color: 0x111110 });
 
-  // Grounded Cross-Hatched Shadow (like screenshot!)
+  // Grounded Cross-Hatched Ink Shadow
   const shadowPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.65, 1.35),
+    new THREE.PlaneGeometry(2.0, 1.45),
     new THREE.MeshBasicMaterial({
       map: hatchShadowTex,
       transparent: true,
@@ -335,71 +424,70 @@ export function createStickmanActor(
     })
   );
   shadowPlane.rotation.x = -Math.PI / 2;
-  shadowPlane.position.set(0.15, 0.02, 0.08);
+  shadowPlane.position.set(0.18, 0.02, 0.08);
   group.add(shadowPlane);
 
   const gluePuddle = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.85, 0.95, 0.05, 14),
+    new THREE.CylinderGeometry(0.85, 0.95, 0.05, 12),
     new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.2 })
   );
   gluePuddle.position.y = 0.03;
   gluePuddle.visible = false;
   group.add(gluePuddle);
 
-  // Lower Body Group
   const lowerGroup = new THREE.Group();
   group.add(lowerGroup);
 
-  const legGeo = new THREE.CylinderGeometry(0.095, 0.09, 0.92, 10);
-  const shoeBodyGeo = new THREE.BoxGeometry(0.3, 0.19, 0.54);
-  const shoeToeGeo = new THREE.SphereGeometry(0.155, 10, 8);
-  const laceGeo = new THREE.BoxGeometry(0.31, 0.028, 0.038);
+  const buildArticulatedLeg = (offsetX: number): { hip: THREE.Group; knee: THREE.Group } => {
+    const hip = new THREE.Group();
+    hip.position.set(offsetX, 0.96, 0);
 
-  const buildLegWithSneaker = (offsetX: number): THREE.Group => {
-    const legPivot = new THREE.Group();
-    legPivot.position.set(offsetX, 0.95, 0);
+    addOutlinedMesh(hip, STICK_THIGH_GEO, blackCharcoalMat, outlineMat, [0, -0.24, 0]);
+    const kneeJoint = new THREE.Mesh(STICK_JOINT_GEO, blackCharcoalMat);
+    kneeJoint.position.set(0, -0.46, 0);
+    hip.add(kneeJoint);
 
-    addOutlinedMesh(legPivot, legGeo, blackCharcoalMat, outlineMat, [0, -0.42, 0]);
+    const knee = new THREE.Group();
+    knee.position.set(0, -0.46, 0);
+    hip.add(knee);
 
+    addOutlinedMesh(knee, STICK_CALF_GEO, blackCharcoalMat, outlineMat, [0, -0.24, 0]);
+
+    // Clean, well-defined White Sneaker with black sole line & 3 laces
     const shoeGroup = new THREE.Group();
-    shoeGroup.position.set(0, -0.86, 0.1);
-    legPivot.add(shoeGroup);
+    shoeGroup.position.set(0, -0.44, 0.1);
+    knee.add(shoeGroup);
 
-    addOutlinedMesh(shoeGroup, shoeBodyGeo, whiteSneakerMat, outlineMat, [0, 0, 0]);
-    addOutlinedMesh(
-      shoeGroup,
-      shoeToeGeo,
-      whiteSneakerMat,
-      outlineMat,
-      [0, -0.01, 0.23],
-      [0, 0, 0],
-      [0.98, 0.68, 1.05]
-    );
+    addOutlinedMesh(shoeGroup, STICK_SHOE_GEO, whiteSneakerMat, outlineMat, [0, 0.02, 0]);
+    const sole = new THREE.Mesh(STICK_SOLE_GEO, soleMat);
+    sole.position.set(0, -0.09, 0);
+    shoeGroup.add(sole);
 
     for (let l = 0; l < 3; l++) {
-      const lace = new THREE.Mesh(laceGeo, penInkMat);
-      lace.position.set(0, 0.1, -0.02 + l * 0.09);
+      const lace = new THREE.Mesh(STICK_LACE_GEO, penInkMat);
+      lace.position.set(0, 0.135, -0.04 + l * 0.09);
       shoeGroup.add(lace);
     }
 
-    return legPivot;
+    return { hip, knee };
   };
 
-  const leftLeg = buildLegWithSneaker(-0.22);
-  const rightLeg = buildLegWithSneaker(0.22);
+  const leftLegBuilt = buildArticulatedLeg(-0.22);
+  const rightLegBuilt = buildArticulatedLeg(0.22);
+  const leftLeg = leftLegBuilt.hip;
+  const leftKnee = leftLegBuilt.knee;
+  const rightLeg = rightLegBuilt.hip;
+  const rightKnee = rightLegBuilt.knee;
   lowerGroup.add(leftLeg, rightLeg);
 
-  // Upper Body Group
   const upperGroup = new THREE.Group();
-  upperGroup.position.set(0, 0.95, 0);
+  upperGroup.position.set(0, 0.96, 0);
   group.add(upperGroup);
 
-  const torsoGeo = new THREE.CylinderGeometry(0.135, 0.12, 0.98, 10);
-  addOutlinedMesh(upperGroup, torsoGeo, blackCharcoalMat, outlineMat, [0, 0.48, 0]);
+  addOutlinedMesh(upperGroup, STICK_TORSO_GEO, blackCharcoalMat, outlineMat, [0, 0.48, 0]);
 
-  // Red Pen Mark left by Righello 30cm thrust!
   const redPenMark = new THREE.Mesh(
-    new THREE.BoxGeometry(0.32, 0.06, 0.3),
+    new THREE.BoxGeometry(0.34, 0.06, 0.32),
     new THREE.MeshBasicMaterial({ color: 0xdc2626 })
   );
   redPenMark.position.set(0, 0.55, 0.05);
@@ -407,72 +495,103 @@ export function createStickmanActor(
   redPenMark.visible = false;
   upperGroup.add(redPenMark);
 
-  // Arms
-  const armGeo = new THREE.CylinderGeometry(0.08, 0.075, 0.78, 8);
+  const hitStarsGroup = createComicStarburstGroup(outlineMat);
+  hitStarsGroup.position.set(0, 0.58, 0.26);
+  hitStarsGroup.visible = false;
+  upperGroup.add(hitStarsGroup);
+
   const leftArm = new THREE.Group();
-  leftArm.position.set(-0.25, 0.88, 0);
-  addOutlinedMesh(
-    leftArm,
-    armGeo,
-    blackCharcoalMat,
-    outlineMat,
-    [-0.08, -0.34, 0.12],
-    [-0.4, 0, 0.25]
-  );
+  leftArm.position.set(-0.26, 0.88, 0);
+  addOutlinedMesh(leftArm, STICK_ARM_GEO, blackCharcoalMat, outlineMat, [0, -0.2, 0]);
+  const leftElbow = new THREE.Group();
+  leftElbow.position.set(0, -0.4, 0);
+  leftArm.add(leftElbow);
+  addOutlinedMesh(leftElbow, STICK_ARM_GEO, blackCharcoalMat, outlineMat, [0, -0.2, 0]);
+  addOutlinedMesh(leftElbow, STICK_HAND_GEO, blackCharcoalMat, outlineMat, [0, -0.42, 0]);
   upperGroup.add(leftArm);
 
-  const rightArm = new THREE.Group();
-  rightArm.position.set(0.25, 0.88, 0);
+  // Clean Spiral Notebook Shield
+  const notebookShield = new THREE.Group();
+  notebookShield.position.set(-0.08, -0.35, 0.28);
+  notebookShield.rotation.set(0.25, 0.22, -0.12);
   addOutlinedMesh(
-    rightArm,
-    armGeo,
-    blackCharcoalMat,
-    outlineMat,
-    [0.08, -0.34, 0.18],
-    [-0.65, 0, -0.2]
+    notebookShield,
+    new THREE.BoxGeometry(0.76, 0.86, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0xfefce8, roughness: 0.75 }),
+    outlineMat
   );
+  for (let r = -2; r <= 2; r++) {
+    const ring = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.1, 0.12), penInkMat);
+    ring.position.set(r * 0.14, 0.44, 0);
+    notebookShield.add(ring);
+  }
+  notebookShield.visible = id % 2 === 1;
+  leftElbow.add(notebookShield);
 
-  const miniPenGeo = new THREE.CylinderGeometry(0.045, 0.06, 0.82, 8);
-  const miniPenMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.4 });
+  const rightArm = new THREE.Group();
+  rightArm.position.set(0.26, 0.88, 0);
+  addOutlinedMesh(rightArm, STICK_ARM_GEO, blackCharcoalMat, outlineMat, [0, -0.2, 0]);
+  const rightElbow = new THREE.Group();
+  rightElbow.position.set(0, -0.4, 0);
+  rightArm.add(rightElbow);
+  addOutlinedMesh(rightElbow, STICK_ARM_GEO, blackCharcoalMat, outlineMat, [0, -0.2, 0]);
+  addOutlinedMesh(rightElbow, STICK_HAND_GEO, blackCharcoalMat, outlineMat, [0, -0.42, 0]);
+
+  // Bot's Clean Pen-Rifle
+  const miniPenGroup = new THREE.Group();
+  miniPenGroup.position.set(0.04, -0.42, 0.25);
   addOutlinedMesh(
-    rightArm,
-    miniPenGeo,
-    miniPenMat,
+    miniPenGroup,
+    new THREE.CylinderGeometry(0.052, 0.064, 0.88, 8),
+    new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.4 }),
     outlineMat,
-    [0.08, -0.58, 0.46],
+    [0, 0, 0],
     [Math.PI / 2, 0, 0]
   );
+  addOutlinedMesh(
+    miniPenGroup,
+    new THREE.ConeGeometry(0.052, 0.2, 8),
+    new THREE.MeshStandardMaterial({ color: 0x1e293b }),
+    outlineMat,
+    [0, 0, 0.54],
+    [Math.PI / 2, 0, 0]
+  );
+
+  const muzzleFlashGroup = createComicStarburstGroup(outlineMat);
+  muzzleFlashGroup.position.set(0, 0, 0.74);
+  muzzleFlashGroup.scale.setScalar(0.6);
+  muzzleFlashGroup.visible = false;
+  miniPenGroup.add(muzzleFlashGroup);
+
+  rightElbow.add(miniPenGroup);
   upperGroup.add(rightArm);
 
-  // Solid Charcoal Spherical Head (matching the screenshot!)
+  // Clean Charcoal Spherical Head with crisp specular highlight
   const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.28, 0);
+  headGroup.position.set(0, 1.32, 0);
   upperGroup.add(headGroup);
 
-  const headSphereGeo = new THREE.SphereGeometry(0.36, 16, 14);
-  addOutlinedMesh(headGroup, headSphereGeo, blackCharcoalMat, outlineMat, [0, 0, 0]);
+  addOutlinedMesh(headGroup, STICK_HEAD_GEO, blackCharcoalMat, outlineMat, [0, 0, 0]);
 
-  // Subtle white pencil highlight on upper-left of the black sphere (exactly like screenshot!)
   const highlightMesh = new THREE.Mesh(
     new THREE.SphereGeometry(0.11, 8, 8),
-    new THREE.MeshBasicMaterial({ color: 0x9ca3af })
+    new THREE.MeshBasicMaterial({ color: 0xa1a1aa })
   );
-  highlightMesh.position.set(-0.14, 0.16, 0.26);
-  highlightMesh.scale.set(1.1, 0.75, 0.35);
+  highlightMesh.position.set(-0.14, 0.16, 0.29);
+  highlightMesh.scale.set(1.1, 0.75, 0.3);
   headGroup.add(highlightMesh);
 
-  // Optional Cork Helmet ("Tappo di Sughero") on top of head
   const corkHelmet = addOutlinedMesh(
     headGroup,
-    new THREE.CylinderGeometry(0.28, 0.23, 0.36, 12),
+    new THREE.CylinderGeometry(0.27, 0.22, 0.34, 10),
     new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.85 }),
     outlineMat,
-    [0, 0.38, 0]
+    [0, 0.4, 0]
   );
   corkHelmet.visible = id % 3 === 0;
 
   const whiteoutSplat = new THREE.Mesh(
-    new THREE.SphereGeometry(0.39, 10, 10),
+    new THREE.SphereGeometry(0.41, 10, 10),
     new THREE.MeshBasicMaterial({ color: 0xffffff })
   );
   whiteoutSplat.scale.set(1.02, 0.85, 0.55);
@@ -488,13 +607,22 @@ export function createStickmanActor(
     lowerGroup,
     headGroup,
     leftLeg,
+    leftKnee,
     rightLeg,
+    rightKnee,
     leftArm,
+    leftElbow,
     rightArm,
+    rightElbow,
     gluePuddle,
     whiteoutSplat,
     redPenMark,
     corkHelmet,
+    notebookShield,
+    muzzleFlashGroup,
+    hitStarsGroup,
+    hitPopTimer: 0,
+    muzzlePopTimer: 0,
     position: group.position,
     velocity: new THREE.Vector3(),
     rotationY: 0,
@@ -513,408 +641,551 @@ export function createStickmanActor(
 }
 
 /**
- * Builds the First-Person Viewmodel matching the screenshot (two charcoal hands + all 17 household/stationery weapons)
+ * Clean, Razor-Sharp First-Person Viewmodel (Arms + 17 Weapons).
+ * Uses a dedicated Fine Viewmodel Outline (`0.0052`) so small parts never blob or Z-fight,
+ * and clean, bold geometric silhouettes for the Stickman Arms, Hands, and all 17 Weapons!
  */
 export function createFirstPersonViewmodel(
-  outlineMat: THREE.Material,
+  _worldOutlineMat: THREE.Material,
   charcoalTex?: THREE.CanvasTexture
 ): {
   root: THREE.Group;
   weaponPivot: THREE.Group;
   leftArm: THREE.Group;
   rightArm: THREE.Group;
+  muzzleFlash: THREE.Group;
   weaponMeshes: Record<WeaponId, THREE.Group>;
 } {
+  // Fine, razor-sharp outline material calibrated specifically for first-person camera distance!
+  const vmOutlineMat = createBoilingOutlineMaterial(0.0052, 0.0004);
+
   const root = new THREE.Group();
-  root.position.set(0, -0.32, -0.66);
+  root.position.set(0, -0.29, -0.62);
 
   const handMat = new THREE.MeshStandardMaterial({
-    color: 0x1e1e1c,
+    color: 0x20201e,
     map: charcoalTex || null,
-    roughness: 0.65,
+    roughness: 0.58,
     metalness: 0.08,
   });
 
-  // Left Stickman Arm (extended forward gripping the barrel, exactly like screenshot!)
+  // Clean, well-defined Stickman Hand (smooth palm sphere + bold thumb + clean curled grip block — zero Z-fighting!)
+  const addCleanStickmanHand = (armGroup: THREE.Group, isLeft: boolean) => {
+    const handGroup = new THREE.Group();
+    handGroup.position.set(0, 0.28, 0);
+    armGroup.add(handGroup);
+
+    // Main rounded Stickman fist/palm
+    addOutlinedMesh(
+      handGroup,
+      new THREE.SphereGeometry(0.062, 14, 12),
+      handMat,
+      vmOutlineMat,
+      [0, 0, 0],
+      [0, 0, 0],
+      [1.05, 0.95, 1.15]
+    );
+    // Clean curled fingers block wrapping around the grip
+    addOutlinedMesh(
+      handGroup,
+      new THREE.BoxGeometry(0.055, 0.068, 0.088),
+      handMat,
+      vmOutlineMat,
+      [isLeft ? 0.036 : -0.036, 0.015, 0.01],
+      [0, 0, isLeft ? -0.35 : 0.35]
+    );
+    // Distinct opposing thumb
+    addOutlinedMesh(
+      handGroup,
+      new THREE.CylinderGeometry(0.02, 0.022, 0.075, 10),
+      handMat,
+      vmOutlineMat,
+      [isLeft ? -0.032 : 0.032, 0.045, 0.025],
+      [0.35, 0, isLeft ? 0.55 : -0.55]
+    );
+  };
+
+  // Left Stickman Arm (smooth, well-defined tubular arm reaching from bottom-left to hold the barrel)
   const leftArm = new THREE.Group();
-  leftArm.position.set(-0.14, -0.16, 0.08);
-  leftArm.rotation.set(0.62, 0.42, -0.38);
+  leftArm.position.set(-0.11, -0.17, 0.03);
+  leftArm.rotation.set(0.56, 0.44, -0.42);
   addOutlinedMesh(
     leftArm,
-    new THREE.CylinderGeometry(0.048, 0.058, 0.58, 10),
+    new THREE.CylinderGeometry(0.046, 0.056, 0.58, 14),
     handMat,
-    outlineMat
+    vmOutlineMat
   );
-  addOutlinedMesh(
-    leftArm,
-    new THREE.SphereGeometry(0.072, 10, 10),
-    handMat,
-    outlineMat,
-    [0, 0.28, 0]
-  );
+  addCleanStickmanHand(leftArm, true);
   root.add(leftArm);
 
-  // Right Stickman Arm (gripping trigger/rear handle, like screenshot!)
+  // Right Stickman Arm (smooth tubular arm holding the rear trigger grip from bottom-right)
   const rightArm = new THREE.Group();
-  rightArm.position.set(0.22, -0.22, 0.18);
-  rightArm.rotation.set(0.68, -0.2, 0.18);
+  rightArm.position.set(0.18, -0.22, 0.14);
+  rightArm.rotation.set(0.62, -0.22, 0.2);
   addOutlinedMesh(
     rightArm,
-    new THREE.CylinderGeometry(0.05, 0.06, 0.54, 10),
+    new THREE.CylinderGeometry(0.048, 0.058, 0.54, 14),
     handMat,
-    outlineMat
+    vmOutlineMat
   );
-  addOutlinedMesh(
-    rightArm,
-    new THREE.SphereGeometry(0.075, 10, 10),
-    handMat,
-    outlineMat,
-    [0, 0.26, 0]
-  );
+  addCleanStickmanHand(rightArm, false);
   root.add(rightArm);
 
   const weaponPivot = new THREE.Group();
-  weaponPivot.position.set(0.1, 0.04, -0.06);
-  weaponPivot.rotation.set(0.08, -0.24, 0.04);
+  weaponPivot.position.set(0.12, 0.02, -0.06);
+  weaponPivot.rotation.set(0.05, -0.35, 0.05);
   root.add(weaponPivot);
+
+  const muzzleFlash = createComicStarburstGroup(vmOutlineMat);
+  muzzleFlash.position.set(0, 0.01, -0.58);
+  muzzleFlash.scale.setScalar(0.42);
+  muzzleFlash.visible = false;
+  weaponPivot.add(muzzleFlash);
 
   const weaponMeshes = {} as Record<WeaponId, THREE.Group>;
 
-  // 1. Penna Blu Bic (Sniper — Transparent outer barrel + black inner ink tube + blue cap!)
+  // Shared crisp weapon materials
+  const silverMetalMat = new THREE.MeshStandardMaterial({
+    color: 0xd4d4d8,
+    roughness: 0.35,
+    metalness: 0.3,
+  });
+  const slateGripMat = new THREE.MeshStandardMaterial({
+    color: 0x475569,
+    roughness: 0.5,
+  });
+  const darkIronMat = new THREE.MeshStandardMaterial({
+    color: 0x1e293b,
+    roughness: 0.4,
+    metalness: 0.4,
+  });
+  const rubberYellowMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    roughness: 0.5,
+  });
+  const woodHandleMat = new THREE.MeshStandardMaterial({
+    color: 0xc27838,
+    roughness: 0.7,
+  });
+
+  // 1. Penna Blu Bic (Clean hexagonal transparent barrel + dark inner ink core + blue cone + blue cap clip)
   const pennaBic = new THREE.Group();
-  const clearBarrel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.044, 0.044, 0.72, 6),
-    new THREE.MeshStandardMaterial({
-      color: 0xe0f2fe,
-      transparent: true,
-      opacity: 0.42,
-      roughness: 0.15,
-    })
-  );
-  clearBarrel.rotation.x = Math.PI / 2;
-  pennaBic.add(clearBarrel);
-  // Inner black ink tube visible through the transparent barrel!
   addOutlinedMesh(
     pennaBic,
-    new THREE.CylinderGeometry(0.015, 0.015, 0.68, 8),
-    new THREE.MeshBasicMaterial({ color: 0x111827 }),
-    outlineMat,
-    [0, 0, 0],
+    new THREE.CylinderGeometry(0.032, 0.032, 0.62, 8),
+    new THREE.MeshStandardMaterial({ color: 0xbae6fd, roughness: 0.25 }),
+    vmOutlineMat,
+    [0, 0, 0.02],
     [Math.PI / 2, 0, 0]
   );
   addOutlinedMesh(
     pennaBic,
-    new THREE.ConeGeometry(0.044, 0.16, 8),
+    new THREE.ConeGeometry(0.032, 0.14, 10),
     new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.35 }),
-    outlineMat,
-    [0, 0, -0.42],
+    vmOutlineMat,
+    [0, 0, -0.36],
     [-Math.PI / 2, 0, 0]
+  );
+  addOutlinedMesh(
+    pennaBic,
+    new THREE.CylinderGeometry(0.034, 0.034, 0.08, 10),
+    new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.35 }),
+    vmOutlineMat,
+    [0, 0, 0.35],
+    [Math.PI / 2, 0, 0]
   );
   weaponMeshes.penna_bic = pennaBic;
 
-  // 2. Penna a Scatto (Screenshot Hero Gun with rubber bands, clip & metallic barrel)
+  // 2. Penna a Scatto (Clean, crisp hero weapon from the screenshot: silver barrel, blue-slate grip,
+  // 2 clean yellow rubber bands, top pocket clip, lower trigger grip, and rear clicker plunger)
   const pennaScatto = new THREE.Group();
+  // Main silver body
   addOutlinedMesh(
     pennaScatto,
-    new THREE.CylinderGeometry(0.056, 0.064, 0.62, 12),
-    new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.35, metalness: 0.35 }),
-    outlineMat,
-    [0, 0, 0],
+    new THREE.CylinderGeometry(0.048, 0.056, 0.48, 14),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0, 0.05],
     [Math.PI / 2, 0, 0]
   );
+  // Front blue-slate grip section
   addOutlinedMesh(
     pennaScatto,
-    new THREE.ConeGeometry(0.056, 0.18, 12),
-    new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.4 }),
-    outlineMat,
-    [0, 0, -0.38],
+    new THREE.CylinderGeometry(0.04, 0.048, 0.2, 14),
+    slateGripMat,
+    vmOutlineMat,
+    [0, 0, -0.29],
+    [Math.PI / 2, 0, 0]
+  );
+  // Conical metallic tip
+  addOutlinedMesh(
+    pennaScatto,
+    new THREE.ConeGeometry(0.04, 0.14, 12),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0, -0.46],
     [-Math.PI / 2, 0, 0]
   );
+  // Top pocket clip (raised cleanly above barrel so there is zero Z-fighting!)
   addOutlinedMesh(
     pennaScatto,
-    new THREE.TorusGeometry(0.064, 0.014, 8, 16),
-    new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.5 }),
-    outlineMat,
-    [0, 0, -0.2]
+    new THREE.BoxGeometry(0.022, 0.024, 0.24),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0.068, 0.08]
+  );
+  // Lower trigger grip handle
+  addOutlinedMesh(
+    pennaScatto,
+    new THREE.BoxGeometry(0.038, 0.19, 0.08),
+    slateGripMat,
+    vmOutlineMat,
+    [0.015, -0.12, 0.12],
+    [0.22, 0, 0]
+  );
+  // Rear clicker button
+  addOutlinedMesh(
+    pennaScatto,
+    new THREE.CylinderGeometry(0.036, 0.04, 0.09, 12),
+    darkIronMat,
+    vmOutlineMat,
+    [0, 0, 0.33],
+    [Math.PI / 2, 0, 0]
+  );
+  // Clean yellow rubber band rings around front & rear barrel
+  addOutlinedMesh(
+    pennaScatto,
+    new THREE.CylinderGeometry(0.053, 0.053, 0.035, 14),
+    rubberYellowMat,
+    vmOutlineMat,
+    [0, 0, -0.17],
+    [Math.PI / 2 + 0.12, 0, 0]
   );
   addOutlinedMesh(
     pennaScatto,
-    new THREE.TorusGeometry(0.066, 0.014, 8, 16),
-    new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.5 }),
-    outlineMat,
-    [0, 0, 0.12]
+    new THREE.CylinderGeometry(0.06, 0.06, 0.035, 14),
+    rubberYellowMat,
+    vmOutlineMat,
+    [0, 0, 0.17],
+    [Math.PI / 2 - 0.1, 0, 0]
   );
   weaponMeshes.penna_scatto = pennaScatto;
 
-  // 3. Spillatrice / Sparapunti
+  // 3. Spillatrice / Sparapunti (Crisp two-piece stapler with red top cap & steel jaw)
   const spillatrice = new THREE.Group();
   addOutlinedMesh(
     spillatrice,
-    new THREE.BoxGeometry(0.09, 0.12, 0.48),
-    new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6, roughness: 0.3 }),
-    outlineMat,
-    [0, 0.03, -0.06]
+    new THREE.BoxGeometry(0.075, 0.09, 0.44),
+    new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 }),
+    vmOutlineMat,
+    [0, 0.03, -0.06],
+    [0.06, 0, 0]
   );
   addOutlinedMesh(
     spillatrice,
-    new THREE.BoxGeometry(0.095, 0.035, 0.5),
-    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.7 }),
-    outlineMat,
-    [0, -0.05, -0.06]
+    new THREE.BoxGeometry(0.08, 0.03, 0.46),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, -0.04, -0.06]
   );
   weaponMeshes.spillatrice = spillatrice;
 
-  // 4. Pennarello Indelebile (Bazooka)
+  // 4. Pennarello Indelebile (Bold thick marker bazooka with white label band & chisel felt tip)
   const pennarello = new THREE.Group();
   addOutlinedMesh(
     pennarello,
-    new THREE.CylinderGeometry(0.085, 0.085, 0.58, 14),
-    new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3 }),
-    outlineMat,
-    [0, 0, -0.05],
+    new THREE.CylinderGeometry(0.068, 0.068, 0.48, 14),
+    darkIronMat,
+    vmOutlineMat,
+    [0, 0, -0.02],
     [Math.PI / 2, 0, 0]
   );
   addOutlinedMesh(
     pennarello,
-    new THREE.BoxGeometry(0.09, 0.11, 0.16),
-    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 }),
-    outlineMat,
-    [0, 0, -0.38]
+    new THREE.CylinderGeometry(0.071, 0.071, 0.22, 14),
+    new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 }),
+    vmOutlineMat,
+    [0, 0, 0.02],
+    [Math.PI / 2, 0, 0]
+  );
+  addOutlinedMesh(
+    pennarello,
+    new THREE.ConeGeometry(0.055, 0.14, 8),
+    new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.8 }),
+    vmOutlineMat,
+    [0, 0, -0.32],
+    [-Math.PI / 2, 0, 0]
   );
   weaponMeshes.pennarello = pennarello;
 
-  // 5. Pistola Colla a Caldo
+  // 5. Pistola Colla a Caldo (Orange glue gun body + angled handle + yellow brass nozzle + white glue stick)
   const collaCaldo = new THREE.Group();
   addOutlinedMesh(
     collaCaldo,
-    new THREE.BoxGeometry(0.08, 0.14, 0.38),
+    new THREE.BoxGeometry(0.068, 0.11, 0.34),
     new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 }),
-    outlineMat
+    vmOutlineMat,
+    [0, 0.02, -0.05]
   );
   addOutlinedMesh(
     collaCaldo,
-    new THREE.ConeGeometry(0.038, 0.14, 10),
-    new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.6 }),
-    outlineMat,
-    [0, 0.02, -0.25],
+    new THREE.BoxGeometry(0.052, 0.18, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.45 }),
+    vmOutlineMat,
+    [0, -0.1, 0.06],
+    [0.25, 0, 0]
+  );
+  addOutlinedMesh(
+    collaCaldo,
+    new THREE.ConeGeometry(0.032, 0.12, 10),
+    rubberYellowMat,
+    vmOutlineMat,
+    [0, 0.02, -0.28],
     [-Math.PI / 2, 0, 0]
   );
   weaponMeshes.colla_caldo = collaCaldo;
 
-  // 6. Taglierino a Scatti
+  // 6. Taglierino a Scatti (Yellow ribbed utility cutter + silver segmented diagonal blade)
   const taglierino = new THREE.Group();
   addOutlinedMesh(
     taglierino,
-    new THREE.BoxGeometry(0.065, 0.12, 0.4),
-    new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 }),
-    outlineMat
+    new THREE.BoxGeometry(0.052, 0.095, 0.38),
+    rubberYellowMat,
+    vmOutlineMat,
+    [0, 0, -0.02]
   );
   addOutlinedMesh(
     taglierino,
-    new THREE.BoxGeometry(0.015, 0.085, 0.3),
-    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8, roughness: 0.2 }),
-    outlineMat,
-    [0, 0.01, -0.28]
+    new THREE.BoxGeometry(0.014, 0.072, 0.24),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0.005, -0.28]
   );
   weaponMeshes.taglierino = taglierino;
 
-  // 7. Cucchiaio di Metallo
+  // 7. Cucchiaio di Metallo (Sleek silver handle + crisp concave-look oval spoon bowl)
   const cucchiaio = new THREE.Group();
   addOutlinedMesh(
     cucchiaio,
-    new THREE.BoxGeometry(0.035, 0.02, 0.46),
-    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.82, roughness: 0.18 }),
-    outlineMat
+    new THREE.CylinderGeometry(0.018, 0.024, 0.44, 10),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0, 0.02],
+    [Math.PI / 2, 0, 0]
   );
   addOutlinedMesh(
     cucchiaio,
-    new THREE.SphereGeometry(0.105, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.85, roughness: 0.15 }),
-    outlineMat,
-    [0, 0.01, -0.29],
+    new THREE.SphereGeometry(0.085, 14, 12),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0.01, -0.27],
     [0, 0, 0],
-    [0.85, 0.38, 1.35]
+    [0.85, 0.35, 1.35]
   );
   weaponMeshes.cucchiaio = cucchiaio;
 
-  // 8. Mestolo di Legno
+  // 8. Mestolo di Legno (Warm wooden handle + deep rounded wooden ladle bowl)
   const mestolo = new THREE.Group();
   addOutlinedMesh(
     mestolo,
-    new THREE.CylinderGeometry(0.028, 0.032, 0.56, 10),
-    new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.78 }),
-    outlineMat,
-    [0, 0, 0],
+    new THREE.CylinderGeometry(0.024, 0.028, 0.48, 10),
+    woodHandleMat,
+    vmOutlineMat,
+    [0, 0, 0.02],
     [Math.PI / 2, 0, 0]
   );
   addOutlinedMesh(
     mestolo,
-    new THREE.SphereGeometry(0.13, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.75 }),
-    outlineMat,
-    [0, 0.02, -0.32],
+    new THREE.SphereGeometry(0.105, 14, 12),
+    woodHandleMat,
+    vmOutlineMat,
+    [0, 0.02, -0.29],
     [0, 0, 0],
-    [1.0, 0.65, 1.15]
+    [1.0, 0.6, 1.1]
   );
   weaponMeshes.mestolo = mestolo;
 
-  // 9. Righello 30 cm
+  // 9. Righello 30 cm (Crisp flat yellow ruler blade with black centimeter tick marks)
   const righello = new THREE.Group();
   addOutlinedMesh(
     righello,
-    new THREE.BoxGeometry(0.09, 0.016, 0.74),
+    new THREE.BoxGeometry(0.085, 0.018, 0.64),
     new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.35 }),
-    outlineMat,
-    [0, 0, -0.16]
+    vmOutlineMat,
+    [0, 0, -0.14]
   );
   weaponMeshes.righello = righello;
 
-  // 10. Forchetta Lanciabile
+  // 10. Forchetta Lanciabile (Crisp 3-pronged silver fork with well-spaced tines so outlines never merge!)
   const forchetta = new THREE.Group();
   addOutlinedMesh(
     forchetta,
-    new THREE.BoxGeometry(0.032, 0.018, 0.42),
-    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.85, roughness: 0.2 }),
-    outlineMat
+    new THREE.CylinderGeometry(0.018, 0.022, 0.36, 10),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0, 0.04],
+    [Math.PI / 2, 0, 0]
   );
-  for (let t = -1.5; t <= 1.5; t += 1) {
+  addOutlinedMesh(
+    forchetta,
+    new THREE.BoxGeometry(0.095, 0.02, 0.04),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0, -0.15]
+  );
+  [-0.036, 0, 0.036].forEach((xOff) => {
     addOutlinedMesh(
       forchetta,
-      new THREE.BoxGeometry(0.012, 0.016, 0.18),
-      new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.85 }),
-      outlineMat,
-      [t * 0.024, 0, -0.28]
+      new THREE.CylinderGeometry(0.008, 0.011, 0.16, 8),
+      silverMetalMat,
+      vmOutlineMat,
+      [xOff, 0, -0.25],
+      [Math.PI / 2, 0, 0]
     );
-  }
+  });
   weaponMeshes.forchetta = forchetta;
 
-  // 11. Padella in Ghisa (Scudo)
+  // 11. Padella in Ghisa (Cast-iron skillet pan with raised rim & handle)
   const padella = new THREE.Group();
   addOutlinedMesh(
     padella,
-    new THREE.CylinderGeometry(0.24, 0.21, 0.06, 16),
-    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.55, roughness: 0.45 }),
-    outlineMat,
-    [0, 0.06, -0.28],
+    new THREE.CylinderGeometry(0.2, 0.18, 0.05, 16),
+    darkIronMat,
+    vmOutlineMat,
+    [0, 0.05, -0.26],
     [Math.PI / 2, 0, 0]
   );
   addOutlinedMesh(
     padella,
-    new THREE.BoxGeometry(0.045, 0.03, 0.36),
-    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.6 }),
-    outlineMat,
-    [0, -0.04, 0.02]
+    new THREE.CylinderGeometry(0.024, 0.028, 0.32, 10),
+    darkIronMat,
+    vmOutlineMat,
+    [0, -0.02, 0.02],
+    [Math.PI / 2 - 0.2, 0, 0]
   );
   weaponMeshes.padella = padella;
 
-  // 12. Spugna Assorbi-Liquidi
+  // 12. Spugna Assorbi-Liquidi (Two-tone yellow/green kitchen sponge with non-overlapping layers)
   const spugna = new THREE.Group();
   addOutlinedMesh(
     spugna,
-    new THREE.BoxGeometry(0.18, 0.09, 0.26),
-    new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.85 }),
-    outlineMat,
-    [0, 0, -0.1]
+    new THREE.BoxGeometry(0.16, 0.075, 0.24),
+    rubberYellowMat,
+    vmOutlineMat,
+    [0, -0.01, -0.1]
   );
   addOutlinedMesh(
     spugna,
-    new THREE.BoxGeometry(0.182, 0.03, 0.262),
-    new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.9 }),
-    outlineMat,
-    [0, 0.055, -0.1]
+    new THREE.BoxGeometry(0.16, 0.032, 0.24),
+    new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 }),
+    vmOutlineMat,
+    [0, 0.048, -0.1]
   );
   weaponMeshes.spugna = spugna;
 
-  // 13. Gomma da Cancellare
+  // 13. Gomma da Cancellare (Iconic pink/blue two-part school eraser)
   const gomma = new THREE.Group();
   addOutlinedMesh(
     gomma,
-    new THREE.BoxGeometry(0.13, 0.07, 0.17),
-    new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.65 }),
-    outlineMat,
-    [0, 0, -0.04]
+    new THREE.BoxGeometry(0.12, 0.065, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.6 }),
+    vmOutlineMat,
+    [0, 0, -0.03]
   );
   addOutlinedMesh(
     gomma,
-    new THREE.BoxGeometry(0.13, 0.07, 0.09),
-    new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.65 }),
-    outlineMat,
-    [0, 0, -0.17]
+    new THREE.BoxGeometry(0.12, 0.065, 0.09),
+    new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.6 }),
+    vmOutlineMat,
+    [0, 0, -0.16]
   );
   weaponMeshes.gomma = gomma;
 
-  // 14. Molletta da Bucato
+  // 14. Molletta da Bucato (Two angled wooden jaws + central metal spring cylinder)
   const molletta = new THREE.Group();
   addOutlinedMesh(
     molletta,
-    new THREE.BoxGeometry(0.06, 0.04, 0.32),
-    new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.7 }),
-    outlineMat,
-    [0, 0.025, -0.1],
-    [0.08, 0, 0]
+    new THREE.BoxGeometry(0.055, 0.035, 0.3),
+    woodHandleMat,
+    vmOutlineMat,
+    [0, 0.032, -0.1],
+    [0.09, 0, 0]
   );
   addOutlinedMesh(
     molletta,
-    new THREE.BoxGeometry(0.06, 0.04, 0.32),
-    new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.7 }),
-    outlineMat,
-    [0, -0.025, -0.1],
-    [-0.08, 0, 0]
+    new THREE.BoxGeometry(0.055, 0.035, 0.3),
+    woodHandleMat,
+    vmOutlineMat,
+    [0, -0.032, -0.1],
+    [-0.09, 0, 0]
+  );
+  addOutlinedMesh(
+    molletta,
+    new THREE.CylinderGeometry(0.022, 0.022, 0.07, 10),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, 0, -0.08],
+    [0, 0, Math.PI / 2]
   );
   weaponMeshes.molletta = molletta;
 
-  // 15. Lampadina & Batteria AA
+  // 15. Lampadina & Batteria AA (Glowing glass bulb + metallic screw base)
   const lampadina = new THREE.Group();
   addOutlinedMesh(
     lampadina,
-    new THREE.SphereGeometry(0.12, 12, 12),
-    new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfde047, emissiveIntensity: 0.35 }),
-    outlineMat,
-    [0, 0.04, -0.16]
+    new THREE.SphereGeometry(0.11, 14, 12),
+    new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      emissive: 0xfacc15,
+      emissiveIntensity: 0.35,
+    }),
+    vmOutlineMat,
+    [0, 0.04, -0.15]
   );
   addOutlinedMesh(
     lampadina,
-    new THREE.CylinderGeometry(0.06, 0.06, 0.12, 10),
-    new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 }),
-    outlineMat,
-    [0, -0.08, -0.16]
+    new THREE.CylinderGeometry(0.055, 0.05, 0.1, 12),
+    silverMetalMat,
+    vmOutlineMat,
+    [0, -0.07, -0.15]
   );
   weaponMeshes.lampadina = lampadina;
 
-  // 16. Phon Asciugacapelli
+  // 16. Phon Asciugacapelli (Cyan hairdryer barrel + angled black handle)
   const phon = new THREE.Group();
   addOutlinedMesh(
     phon,
-    new THREE.CylinderGeometry(0.09, 0.11, 0.38, 12),
-    new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.3 }),
-    outlineMat,
+    new THREE.CylinderGeometry(0.075, 0.095, 0.34, 14),
+    new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.35 }),
+    vmOutlineMat,
     [0, 0.06, -0.12],
     [Math.PI / 2, 0, 0]
   );
   addOutlinedMesh(
     phon,
-    new THREE.CylinderGeometry(0.045, 0.05, 0.28, 10),
-    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 }),
-    outlineMat,
-    [0, -0.12, 0.02]
+    new THREE.CylinderGeometry(0.038, 0.044, 0.24, 12),
+    darkIronMat,
+    vmOutlineMat,
+    [0, -0.1, 0.02],
+    [0.2, 0, 0]
   );
   weaponMeshes.phon = phon;
 
-  // 17. Puntatore Laser & Gomitolo
+  // 17. Puntatore Laser & Gomitolo (Sleek silver laser pen + glowing red emitter tip)
   const laserGatto = new THREE.Group();
   addOutlinedMesh(
     laserGatto,
-    new THREE.CylinderGeometry(0.028, 0.028, 0.36, 10),
-    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8 }),
-    outlineMat,
+    new THREE.CylinderGeometry(0.026, 0.026, 0.36, 12),
+    silverMetalMat,
+    vmOutlineMat,
     [0, 0, -0.12],
     [Math.PI / 2, 0, 0]
   );
   addOutlinedMesh(
     laserGatto,
-    new THREE.SphereGeometry(0.032, 8, 8),
+    new THREE.SphereGeometry(0.03, 10, 10),
     new THREE.MeshBasicMaterial({ color: 0xef4444 }),
-    outlineMat,
+    vmOutlineMat,
     [0, 0, -0.31]
   );
   weaponMeshes.laser_gatto = laserGatto;
@@ -924,11 +1195,11 @@ export function createFirstPersonViewmodel(
     weaponPivot.add(weaponMeshes[key]);
   });
 
-  return { root, weaponPivot, leftArm, rightArm, weaponMeshes };
+  return { root, weaponPivot, leftArm, rightArm, muzzleFlash, weaponMeshes };
 }
 
 /**
- * Giant Landlord Boss ("Il Padrone di Casa" with Apron & Giant Broom) for Domestic Chaos Mode
+ * Giant Landlord Boss ("Il Padrone di Casa" with Apron & Giant Broom)
  */
 export function createPadroneBoss(outlineMat: THREE.Material): {
   group: THREE.Group;
@@ -939,13 +1210,28 @@ export function createPadroneBoss(outlineMat: THREE.Material): {
   const apronMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.6 });
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.6 });
 
-  // Giant legs & torso (Scale ~3.5x Stickman!)
-  addOutlinedMesh(group, new THREE.CylinderGeometry(0.95, 1.1, 4.8, 12), bodyMat, outlineMat, [0, 2.4, 0]);
-  addOutlinedMesh(group, new THREE.BoxGeometry(1.9, 3.2, 1.4), apronMat, outlineMat, [0, 2.5, 0.35]);
-  // Head
-  addOutlinedMesh(group, new THREE.SphereGeometry(1.15, 14, 12), skinMat, outlineMat, [0, 5.7, 0]);
+  addOutlinedMesh(
+    group,
+    new THREE.CylinderGeometry(0.95, 1.1, 4.8, 12),
+    bodyMat,
+    outlineMat,
+    [0, 2.4, 0]
+  );
+  addOutlinedMesh(
+    group,
+    new THREE.BoxGeometry(1.9, 3.2, 1.4),
+    apronMat,
+    outlineMat,
+    [0, 2.5, 0.35]
+  );
+  addOutlinedMesh(
+    group,
+    new THREE.SphereGeometry(1.15, 14, 12),
+    skinMat,
+    outlineMat,
+    [0, 5.7, 0]
+  );
 
-  // Giant Sweeping Broom ("La Scopa")
   const broomPivot = new THREE.Group();
   broomPivot.position.set(1.4, 3.8, 0.6);
   addOutlinedMesh(
@@ -970,11 +1256,7 @@ export function createPadroneBoss(outlineMat: THREE.Material): {
 }
 
 /**
- * Giant Sketch Cat Boss ("Il Gatto Disastro") with:
- * - Purr Vibration Ring ("Le Fusa" ripple wave)
- * - Curling Sleep Body Group & Head Group (for Cat-Nap animation when Barra del Caos = 100%)
- * - Open Glowing Eyes vs Closed Sleeping Eyelids
- * - Floating "Zzz" & Pencil-Drawn Buzzing Mosquitoes ("Zanzare a matita") when napping!
+ * Giant Sketch Cat Boss ("Il Gatto Disastro")
  */
 export function createGattoBoss(outlineMat: THREE.Material): {
   group: THREE.Group;
@@ -995,7 +1277,6 @@ export function createGattoBoss(outlineMat: THREE.Material): {
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
   const eyelidMat = new THREE.MeshBasicMaterial({ color: 0xfaf8f2 });
 
-  // Torso
   addOutlinedMesh(
     bodyGroup,
     new THREE.SphereGeometry(1.6, 14, 12),
@@ -1006,13 +1287,17 @@ export function createGattoBoss(outlineMat: THREE.Material): {
     [1.15, 0.85, 1.65]
   );
 
-  // Head Group (tilts & tucks into paws when napping)
   const headGroup = new THREE.Group();
   headGroup.position.set(0, 2.6, 1.8);
   bodyGroup.add(headGroup);
 
-  addOutlinedMesh(headGroup, new THREE.SphereGeometry(1.25, 14, 12), catFurMat, outlineMat, [0, 0, 0]);
-  // Pointed Cat Ears
+  addOutlinedMesh(
+    headGroup,
+    new THREE.SphereGeometry(1.25, 14, 12),
+    catFurMat,
+    outlineMat,
+    [0, 0, 0]
+  );
   addOutlinedMesh(
     headGroup,
     new THREE.ConeGeometry(0.45, 0.95, 6),
@@ -1030,7 +1315,6 @@ export function createGattoBoss(outlineMat: THREE.Material): {
     [0, 0, -0.25]
   );
 
-  // Open Glowing Yellow Doodle Eyes
   const openEyesGroup = new THREE.Group();
   const lEye = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), eyeMat);
   lEye.position.set(-0.45, 0.15, 1.1);
@@ -1039,7 +1323,6 @@ export function createGattoBoss(outlineMat: THREE.Material): {
   openEyesGroup.add(lEye, rEye);
   headGroup.add(openEyesGroup);
 
-  // Closed Sleeping Eyelids (visible during Cat-Nap!)
   const closedEyesGroup = new THREE.Group();
   closedEyesGroup.visible = false;
   const lidGeo = new THREE.BoxGeometry(0.48, 0.08, 0.12);
@@ -1052,13 +1335,17 @@ export function createGattoBoss(outlineMat: THREE.Material): {
   closedEyesGroup.add(lLid, rLid);
   headGroup.add(closedEyesGroup);
 
-  // Swatting Front Paw
   const pawPivot = new THREE.Group();
   pawPivot.position.set(0.9, 1.2, 2.1);
-  addOutlinedMesh(pawPivot, new THREE.SphereGeometry(0.55, 10, 10), catFurMat, outlineMat, [0, 0, 0.6]);
+  addOutlinedMesh(
+    pawPivot,
+    new THREE.SphereGeometry(0.55, 10, 10),
+    catFurMat,
+    outlineMat,
+    [0, 0, 0.6]
+  );
   bodyGroup.add(pawPivot);
 
-  // Whipping Tail
   const tailPivot = new THREE.Group();
   tailPivot.position.set(0, 1.8, -2.4);
   addOutlinedMesh(
@@ -1071,7 +1358,6 @@ export function createGattoBoss(outlineMat: THREE.Material): {
   );
   bodyGroup.add(tailPivot);
 
-  // Concentric Purr Vibration Ring on Floor ("Le Fusa" shockwave)
   const purrWaveRing = new THREE.Mesh(
     new THREE.RingGeometry(2.8, 3.3, 28),
     new THREE.MeshBasicMaterial({
@@ -1086,7 +1372,6 @@ export function createGattoBoss(outlineMat: THREE.Material): {
   purrWaveRing.visible = false;
   group.add(purrWaveRing);
 
-  // Floating "Zzz" & Pencil-Drawn Buzzing Mosquitoes ("Zanzare") for Cat-Nap state
   const sleepZzzGroup = new THREE.Group();
   sleepZzzGroup.position.set(0, 4.2, 1.5);
   sleepZzzGroup.visible = false;
@@ -1105,7 +1390,6 @@ export function createGattoBoss(outlineMat: THREE.Material): {
     sleepZzzGroup.add(zItem);
   }
 
-  // 2 Tiny Pencil-Drawn Mosquitoes orbiting the sleeping cat
   const mosqMat = new THREE.MeshBasicMaterial({ color: 0x27272a });
   const wingMat = new THREE.MeshBasicMaterial({ color: 0xfafaf9 });
   for (let m = 0; m < 2; m++) {

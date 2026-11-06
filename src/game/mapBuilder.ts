@@ -4,6 +4,7 @@ import {
   addOutlinedMesh,
   ColliderBox,
   createCrossHatchPastelTexture,
+  createHatchShadowTexture,
 } from './doodleModels';
 
 export interface WeaponPickupNode {
@@ -23,13 +24,24 @@ export interface VentDuctZone {
   axis: 'x' | 'z';
 }
 
+export interface KineticProp {
+  mesh: THREE.Mesh;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  rotVel: THREE.Vector3;
+  baseY: number;
+  radius: number;
+}
+
 export interface BuiltArena {
   group: THREE.Group;
   colliders: ColliderBox[];
   queryNearbyColliders: (x: number, z: number) => ColliderBox[];
+  worldHalfExtent: number; // 760m per room -> [-760, +760] world bounds (1520m x 1520m total!)
   ventDuctZones: VentDuctZone[];
   ductFanPivots: THREE.Group[];
   tremblingProps: THREE.Object3D[];
+  kineticProps: KineticProp[];
   paperPickups: THREE.Mesh[];
   weaponPickups: WeaponPickupNode[];
   corkHelmetPickup: THREE.Mesh;
@@ -50,6 +62,15 @@ export interface BuiltArena {
   vacuumPosition: THREE.Vector3;
 }
 
+const EMPTY_COLLIDER_BUCKET: ColliderBox[] = [];
+
+// Shared Unit Geometries (allocated once -> Zero GPU buffer duplication across hundreds of props!)
+const UNIT_BOX_GEO = new THREE.BoxGeometry(1, 1, 1);
+const UNIT_CYL_GEO = new THREE.CylinderGeometry(1, 1, 1, 14);
+const UNIT_CONE_GEO = new THREE.ConeGeometry(1, 1, 10);
+const UNIT_SPHERE_GEO = new THREE.SphereGeometry(1, 12, 10);
+const UNIT_PLANE_GEO = new THREE.PlaneGeometry(1, 1);
+
 export function buildArenaMap(
   maxAnisotropy: number,
   outlineMat: THREE.Material,
@@ -60,10 +81,44 @@ export function buildArenaMap(
   const ventDuctZones: VentDuctZone[] = [];
   const ductFanPivots: THREE.Group[] = [];
   const tremblingProps: THREE.Object3D[] = [];
+  const kineticProps: KineticProp[] = [];
   const paperPickups: THREE.Mesh[] = [];
   const weaponPickups: WeaponPickupNode[] = [];
   const rubberDucks: THREE.Group[] = [];
   const toastSlices: THREE.Mesh[] = [];
+
+  const ROOM_SIZE = 760;
+  const WORLD_TOTAL_SIZE = ROOM_SIZE * 2; // 1520m x 1520m
+
+  const hatchShadowTex = createHatchShadowTexture();
+  const hatchShadowMat = new THREE.MeshBasicMaterial({
+    map: hatchShadowTex,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+
+  // Batch all floor shadows into a single GPU InstancedMesh (1 draw call for up to 700 shadows!)
+  const MAX_INSTANCED_SHADOWS = 700;
+  const shadowInstancedMesh = new THREE.InstancedMesh(
+    UNIT_PLANE_GEO,
+    hatchShadowMat,
+    MAX_INSTANCED_SHADOWS
+  );
+  shadowInstancedMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  let shadowInstanceCount = 0;
+  const _shadowDummy = new THREE.Object3D();
+
+  const addBatchedFloorShadow = (x: number, z: number, w: number, d: number, yaw = 0) => {
+    if (shadowInstanceCount >= MAX_INSTANCED_SHADOWS) return;
+    _shadowDummy.position.set(x, 0.018, z);
+    _shadowDummy.rotation.set(-Math.PI / 2, 0, yaw);
+    _shadowDummy.scale.set(w, d, 1);
+    _shadowDummy.updateMatrix();
+    shadowInstancedMesh.setMatrixAt(shadowInstanceCount++, _shadowDummy.matrix);
+  };
 
   const registerTremblingProp = (obj: THREE.Object3D) => {
     obj.userData.baseY = obj.position.y;
@@ -72,7 +127,7 @@ export function buildArenaMap(
     tremblingProps.push(obj);
   };
 
-  // Shared Pastel Cross-Hatched Materials (matching the screenshot's colored pencil style!)
+  // Shared Pastel Cross-Hatched Materials
   const yellowPostItMat = new THREE.MeshStandardMaterial({
     map: createCrossHatchPastelTexture('#fde047', maxAnisotropy),
     roughness: 0.72,
@@ -106,7 +161,7 @@ export function buildArenaMap(
     roughness: 0.2,
   });
   const woodMat = new THREE.MeshStandardMaterial({
-    map: createCrossHatchPastelTexture('#d6a87c', maxAnisotropy),
+    map: createCrossHatchPastelTexture('#c99364', maxAnisotropy),
     roughness: 0.75,
   });
   const steelMat = new THREE.MeshStandardMaterial({
@@ -120,23 +175,27 @@ export function buildArenaMap(
     metalness: 0.6,
   });
   const whitePagesMat = new THREE.MeshStandardMaterial({
-    color: 0xfefce8,
+    map: createCrossHatchPastelTexture('#fef9e7', maxAnisotropy),
     roughness: 0.8,
   });
 
-  // Scale graph paper repeat so squares stay crisp across the mega-vast 760m x 760m arena!
-  graphPaperTex.repeat.set(220, 220);
+  // Scale graph paper repeat so squares stay crisp across 4 rooms of 760m x 760m (1520m x 1520m total)
+  graphPaperTex.repeat.set(440, 440);
   graphPaperTex.needsUpdate = true;
 
-  // Mega-Vast Wooden Desk / House Floor Slab (840m x 840m)
-  const outerFloor = new THREE.Mesh(new THREE.BoxGeometry(840, 2.4, 840), woodMat);
-  outerFloor.position.set(0, -1.24, 0);
-  outerFloor.receiveShadow = true;
+  // Colossal Wooden Desk / House Floor Slab
+  const outerFloor = new THREE.Mesh(
+    new THREE.BoxGeometry(WORLD_TOTAL_SIZE + 120, 3.0, WORLD_TOTAL_SIZE + 120),
+    woodMat
+  );
+  outerFloor.position.set(0, -1.54, 0);
+  outerFloor.updateMatrix();
+  outerFloor.matrixAutoUpdate = false;
   group.add(outerFloor);
 
-  // Mega-Vast Sketchbook Paper Sheet covering the 4-Room Mega-House (760m x 760m -> 380m x 380m per room!)
+  // Main Flat Sketchbook Paper Sheet covering the 4 rooms
   const paperSheet = new THREE.Mesh(
-    new THREE.PlaneGeometry(760, 760),
+    new THREE.PlaneGeometry(WORLD_TOTAL_SIZE, WORLD_TOTAL_SIZE),
     new THREE.MeshStandardMaterial({
       map: graphPaperTex,
       roughness: 0.85,
@@ -144,16 +203,33 @@ export function buildArenaMap(
     })
   );
   paperSheet.rotation.x = -Math.PI / 2;
-  paperSheet.receiveShadow = true;
+  paperSheet.updateMatrix();
+  paperSheet.matrixAutoUpdate = false;
   group.add(paperSheet);
 
-  // Room Divider Cardboard Walls with Wide Doorways + Passages for Book Corridors (±92m) and HVAC Ducts (±185m)
+  // Room Divider Cardboard Walls across the 760m room spans
   const wallMat = new THREE.MeshStandardMaterial({
     map: createCrossHatchPastelTexture('#f3e8d2', maxAnisotropy),
     roughness: 0.8,
   });
-  const buildWallSegment = (x: number, z: number, w: number, h: number, d: number, label: string) => {
-    addOutlinedMesh(group, new THREE.BoxGeometry(w, h, d), wallMat, outlineMat, [x, h / 2, z]);
+  const buildWallSegment = (
+    x: number,
+    z: number,
+    w: number,
+    h: number,
+    d: number,
+    label: string
+  ) => {
+    addOutlinedMesh(
+      group,
+      UNIT_BOX_GEO,
+      wallMat,
+      outlineMat,
+      [x, h / 2, z],
+      [0, 0, 0],
+      [w, h, d],
+      true
+    );
     colliders.push({
       minX: x - w / 2,
       maxX: x + w / 2,
@@ -165,28 +241,29 @@ export function buildArenaMap(
     });
   };
 
-  // North-South Divider Wall segments along X = 0 (leaving openings at Z=0, Z=±92 for Book Corridors, Z=±185 for HVAC Ducts, Z=±280)
-  buildWallSegment(0, -45, 2.2, 18.0, 56, 'Parete Divisoria Nord-1');
-  buildWallSegment(0, -138, 2.2, 18.0, 62, 'Parete Divisoria Nord-2');
-  buildWallSegment(0, -240, 2.2, 18.0, 76, 'Parete Divisoria Nord-3');
-  buildWallSegment(0, -335, 2.2, 18.0, 70, 'Parete Divisoria Nord-Esterna');
+  const dividerSpans: [number, number][] = [
+    [-45, 56],
+    [-138, 62],
+    [-260, 108],
+    [-410, 96],
+    [-565, 120],
+    [-700, 108],
+    [45, 56],
+    [138, 62],
+    [260, 108],
+    [410, 96],
+    [565, 120],
+    [700, 108],
+  ];
+  dividerSpans.forEach(([pos, len], idx) => {
+    buildWallSegment(0, pos, 2.6, 22.0, len, `Parete Divisoria Nord-Sud #${idx + 1}`);
+    buildWallSegment(pos, 0, len, 22.0, 2.6, `Parete Divisoria Ovest-Est #${idx + 1}`);
+  });
 
-  buildWallSegment(0, 45, 2.2, 18.0, 56, 'Parete Divisoria Sud-1');
-  buildWallSegment(0, 138, 2.2, 18.0, 62, 'Parete Divisoria Sud-2');
-  buildWallSegment(0, 240, 2.2, 18.0, 76, 'Parete Divisoria Sud-3');
-  buildWallSegment(0, 335, 2.2, 18.0, 70, 'Parete Divisoria Sud-Esterna');
-
-  // West-East Divider Wall segments along Z = 0 (leaving openings at X=0, X=±92 for Book Corridors, X=±185 for HVAC Ducts, X=±280)
-  buildWallSegment(-45, 0, 56, 18.0, 2.2, 'Parete Divisoria Ovest-1');
-  buildWallSegment(-138, 0, 62, 18.0, 2.2, 'Parete Divisoria Ovest-2');
-  buildWallSegment(-240, 0, 76, 18.0, 2.2, 'Parete Divisoria Ovest-3');
-  buildWallSegment(-335, 0, 70, 18.0, 2.2, 'Parete Divisoria Ovest-Esterna');
-
-  buildWallSegment(45, 0, 56, 18.0, 2.2, 'Parete Divisoria Est-1');
-  buildWallSegment(138, 0, 62, 18.0, 2.2, 'Parete Divisoria Est-2');
-  buildWallSegment(240, 0, 76, 18.0, 2.2, 'Parete Divisoria Est-3');
-  buildWallSegment(335, 0, 70, 18.0, 2.2, 'Parete Divisoria Est-Esterna');
-
+  /**
+   * Clean, Well-Defined 2-Part Book / Block Builder (Zero overlapping Z-fighting faces!).
+   * Uses shared UNIT_BOX_GEO + batched instanced shadow for maximum FPS.
+   */
   const addBookBlock = (
     x: number,
     y: number,
@@ -196,26 +273,66 @@ export function buildArenaMap(
     d: number,
     coverMat: THREE.Material,
     label: string,
-    extraFlags: Partial<ColliderBox> = {}
+    extraFlags: Partial<ColliderBox> = {},
+    yawTilt?: number
   ) => {
     const bookGroup = new THREE.Group();
     bookGroup.position.set(x, y, z);
+    const organicYaw =
+      yawTilt !== undefined
+        ? yawTilt
+        : extraFlags.isBookBridge
+        ? ((Math.sin(x * 0.37 + z * 0.53 + y) * 0.03) as number)
+        : ((Math.sin(x * 0.71 + z * 0.43 + y * 1.3) * 0.055) as number);
+    bookGroup.rotation.y = organicYaw;
+
+    // 1. Clean main colored block/cover
     addOutlinedMesh(
       bookGroup,
-      new THREE.BoxGeometry(w, h, d),
+      UNIT_BOX_GEO,
       coverMat,
       outlineMat,
-      [0, h / 2, 0]
+      [0, h * 0.5, 0],
+      [0, 0, 0],
+      [w, h, d],
+      true
     );
-    addOutlinedMesh(
-      bookGroup,
-      new THREE.BoxGeometry(w * 0.94, h * 0.78, d * 0.94),
-      whitePagesMat,
-      outlineMat,
-      [0.12, h / 2, 0]
-    );
+
+    // 2. Clean non-overlapping page edge strip on the front/right side (gives unmistakable book/pad definition without Z-fighting!)
+    const isAppliance =
+      label.includes('Vasca') ||
+      label.includes('Trono') ||
+      label.includes('Cassetta') ||
+      label.includes('Tostapane') ||
+      label.includes('Pentolone') ||
+      label.includes('Aspirapolvere');
+
+    if (!isAppliance) {
+      addOutlinedMesh(
+        bookGroup,
+        UNIT_BOX_GEO,
+        whitePagesMat,
+        outlineMat,
+        [w * 0.04, h * 0.5, d * 0.04],
+        [0, 0, 0],
+        [w * 0.96, h * 0.72, d * 0.96],
+        true
+      );
+    }
+
+    if (y === 0 && w < 65 && d < 65) {
+      addBatchedFloorShadow(x + w * 0.12, z + d * 0.1, w * 1.24, d * 1.24, organicYaw);
+    }
+
     group.add(bookGroup);
-    registerTremblingProp(bookGroup);
+    // Only register nearby/medium props for cat-purr trembling so we don't iterate 500 static mega-walls
+    if (Math.abs(x) < 160 && Math.abs(z) < 160) {
+      registerTremblingProp(bookGroup);
+    } else {
+      bookGroup.updateMatrix();
+      bookGroup.matrixAutoUpdate = false;
+    }
+
     colliders.push({
       minX: x - w / 2,
       maxX: x + w / 2,
@@ -229,30 +346,158 @@ export function buildArenaMap(
     return bookGroup;
   };
 
+  // Clean Open Manila Envelope with protruding white letter sheet
+  const addOpenManilaEnvelope = (x: number, z: number, w: number, h: number, d: number, yaw = 0) => {
+    const envGroup = new THREE.Group();
+    envGroup.position.set(x, 0, z);
+    envGroup.rotation.y = yaw;
+
+    addOutlinedMesh(
+      envGroup,
+      UNIT_BOX_GEO,
+      manilaEnvelopeMat,
+      outlineMat,
+      [0, h * 0.5, 0],
+      [0, 0, 0],
+      [w, h, d],
+      true
+    );
+    addOutlinedMesh(
+      envGroup,
+      UNIT_BOX_GEO,
+      whitePagesMat,
+      outlineMat,
+      [0, h * 0.9, -d * 0.05],
+      [0, 0, -0.03],
+      [w * 0.78, h * 0.78, d * 0.45],
+      true
+    );
+
+    addBatchedFloorShadow(x + 0.5, z + 0.4, w * 1.22, d * 1.9, yaw);
+    group.add(envGroup);
+    registerTremblingProp(envGroup);
+    colliders.push({
+      minX: x - w / 2,
+      maxX: x + w / 2,
+      minZ: z - d / 2,
+      maxZ: z + d / 2,
+      bottomY: 0,
+      topY: h * 1.25,
+      label: 'Busta Manila Gialla Aperta con Lettera',
+    });
+  };
+
+  // Clean Scattered Loose Paper Sheet
+  const addScatteredPaperSheet = (
+    x: number,
+    z: number,
+    w: number,
+    d: number,
+    yaw: number,
+    stackCount = 1
+  ) => {
+    const sheetGroup = new THREE.Group();
+    sheetGroup.position.set(x, 0, z);
+    sheetGroup.rotation.y = yaw;
+
+    for (let s = 0; s < stackCount; s++) {
+      addOutlinedMesh(
+        sheetGroup,
+        UNIT_BOX_GEO,
+        whitePagesMat,
+        outlineMat,
+        [s * 0.14, 0.06 + s * 0.11, -s * 0.1],
+        [0, s * 0.08, 0],
+        [w, 0.09, d],
+        true
+      );
+    }
+
+    addBatchedFloorShadow(x + 0.2, z + 0.2, w * 1.2, d * 1.2, yaw);
+    group.add(sheetGroup);
+    registerTremblingProp(sheetGroup);
+  };
+
+  // Clean Spiral Notebook Prop
+  const addSpiralNotebookProp = (
+    x: number,
+    y: number,
+    z: number,
+    w: number,
+    d: number,
+    yaw: number
+  ) => {
+    const nbGroup = new THREE.Group();
+    nbGroup.position.set(x, y, z);
+    nbGroup.rotation.y = yaw;
+
+    addOutlinedMesh(
+      nbGroup,
+      UNIT_BOX_GEO,
+      whitePagesMat,
+      outlineMat,
+      [0, 0.2, 0],
+      [0, 0, 0],
+      [w, 0.38, d],
+      true
+    );
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x141413 });
+    for (let r = -3; r <= 3; r++) {
+      const ring = new THREE.Mesh(UNIT_BOX_GEO, ringMat);
+      ring.scale.set(0.14, 0.46, 0.36);
+      ring.position.set(r * (w * 0.12), 0.24, -d * 0.48);
+      ring.updateMatrix();
+      ring.matrixAutoUpdate = false;
+      nbGroup.add(ring);
+    }
+    if (y === 0) addBatchedFloorShadow(x + 0.25, z + 0.25, w * 1.2, d * 1.2, yaw);
+    group.add(nbGroup);
+    registerTremblingProp(nbGroup);
+  };
+
+  // Clean Pencil Cup Tower with well-defined colored pencils
   const addPencilCupTower = (x: number, z: number, radius: number, height: number) => {
     const cupGroup = new THREE.Group();
     cupGroup.position.set(x, 0, z);
     addOutlinedMesh(
       cupGroup,
-      new THREE.CylinderGeometry(radius, radius * 0.92, height, 14),
+      UNIT_CYL_GEO,
       blueCupMat,
       outlineMat,
-      [0, height / 2, 0]
+      [0, height / 2, 0],
+      [0, 0, 0],
+      [radius, height, radius],
+      true
     );
+
     const pencilMats = [yellowPostItMat, pinkPostItMat, greenBookMat, redBookMat];
     for (let i = 0; i < 4; i++) {
-      const angle = (i * Math.PI) / 2 + 0.3;
+      const angle = (i * Math.PI) / 2 + 0.35;
+      const pLen = height * 1.42;
+      const px = Math.cos(angle) * radius * 0.42;
+      const pz = Math.sin(angle) * radius * 0.42;
+      const tiltX = (i % 2 === 0 ? 1 : -1) * 0.14;
+      const tiltZ = (i < 2 ? 1 : -1) * 0.12;
       addOutlinedMesh(
         cupGroup,
-        new THREE.CylinderGeometry(radius * 0.16, radius * 0.16, height * 1.45, 8),
+        UNIT_CYL_GEO,
         pencilMats[i],
         outlineMat,
-        [Math.cos(angle) * radius * 0.42, height * 0.95, Math.sin(angle) * radius * 0.42],
-        [(i % 2 === 0 ? 1 : -1) * 0.14, 0, (i < 2 ? 1 : -1) * 0.12]
+        [px, height * 0.92, pz],
+        [tiltX, 0, tiltZ],
+        [radius * 0.15, pLen, radius * 0.15],
+        true
       );
     }
+
+    addBatchedFloorShadow(x + radius * 0.3, z + radius * 0.25, radius * 2.8, radius * 2.4, 0);
     group.add(cupGroup);
-    registerTremblingProp(cupGroup);
+    if (Math.abs(x) < 160 && Math.abs(z) < 160) {
+      registerTremblingProp(cupGroup);
+    } else {
+      cupGroup.updateMatrix();
+      cupGroup.matrixAutoUpdate = false;
+    }
     colliders.push({
       minX: x - radius,
       maxX: x + radius,
@@ -265,9 +510,7 @@ export function buildArenaMap(
   };
 
   // ============================================================================
-  // NUOVI PERCORSI DI COLLEGAMENTO TRA LE 4 STANZE:
-  // A) 4 CONDOTTI DI VENTILAZIONE IN LAMIERA (HVAC AIR DUCT TUNNELS)
-  // B) 4 CORRIDOI & PONTI SOSPESI DI LIBRI IMPILATI (STACKED BOOK CORRIDORS)
+  // PERCORSI DI COLLEGAMENTO INTER-STANZA (8 CONDOTTI HVAC + 8 CORRIDOI LIBRI)
   // ============================================================================
   const buildVentilationDuctTunnel = (
     id: string,
@@ -277,10 +520,10 @@ export function buildArenaMap(
     length: number,
     axis: 'x' | 'z'
   ) => {
-    const ductWidth = 15.0; // Wide interior so players and bots can sprint through!
-    const wallThick = 1.2;
-    const ductHeight = 7.4;
-    const roofThick = 1.1;
+    const ductWidth = 16.0;
+    const wallThick = 1.3;
+    const ductHeight = 7.8;
+    const roofThick = 1.2;
 
     const ductGroup = new THREE.Group();
     ductGroup.position.set(centerX, 0, centerZ);
@@ -289,30 +532,37 @@ export function buildArenaMap(
     const spanX = axis === 'x' ? length : ductWidth;
     const spanZ = axis === 'z' ? length : ductWidth;
 
-    // Galvanized Steel Floor Plate inside the Ventilation Duct
     addOutlinedMesh(
       ductGroup,
-      new THREE.BoxGeometry(spanX, 0.25, spanZ),
+      UNIT_BOX_GEO,
       ductDarkSteelMat,
       outlineMat,
-      [0, 0.125, 0]
+      [0, 0.13, 0],
+      [0, 0, 0],
+      [spanX, 0.26, spanZ],
+      true
     );
 
     if (axis === 'x') {
-      // Side walls along X
       addOutlinedMesh(
         ductGroup,
-        new THREE.BoxGeometry(length, ductHeight, wallThick),
+        UNIT_BOX_GEO,
         steelMat,
         outlineMat,
-        [0, ductHeight / 2, -ductWidth / 2]
+        [0, ductHeight / 2, -ductWidth / 2],
+        [0, 0, 0],
+        [length, ductHeight, wallThick],
+        true
       );
       addOutlinedMesh(
         ductGroup,
-        new THREE.BoxGeometry(length, ductHeight, wallThick),
+        UNIT_BOX_GEO,
         steelMat,
         outlineMat,
-        [0, ductHeight / 2, ductWidth / 2]
+        [0, ductHeight / 2, ductWidth / 2],
+        [0, 0, 0],
+        [length, ductHeight, wallThick],
+        true
       );
       colliders.push({
         minX: centerX - length / 2,
@@ -335,13 +585,15 @@ export function buildArenaMap(
         isVentDuct: true,
       });
 
-      // Overhead Duct Roof Slab (walkable on top AND hollow underneath via bottomY!)
       addOutlinedMesh(
         ductGroup,
-        new THREE.BoxGeometry(length, roofThick, ductWidth + wallThick * 2),
+        UNIT_BOX_GEO,
         steelMat,
         outlineMat,
-        [0, ductHeight + roofThick / 2, 0]
+        [0, ductHeight + roofThick / 2, 0],
+        [0, 0, 0],
+        [length, roofThick, ductWidth + wallThick * 2],
+        true
       );
       colliders.push({
         minX: centerX - length / 2,
@@ -354,38 +606,44 @@ export function buildArenaMap(
         isVentDuct: true,
       });
 
-      // 3 Internal Spinning Ventilation Turbine Fans along the duct
       [-length * 0.35, 0, length * 0.35].forEach((offsetX) => {
         const fanPivot = new THREE.Group();
-        fanPivot.position.set(offsetX, ductHeight - 1.5, 0);
+        fanPivot.position.set(offsetX, ductHeight - 1.6, 0);
         for (let b = 0; b < 4; b++) {
           addOutlinedMesh(
             fanPivot,
-            new THREE.BoxGeometry(0.25, 2.2, 0.55),
+            UNIT_BOX_GEO,
             yellowPostItMat,
             outlineMat,
             [0, 0, 0],
-            [(b * Math.PI) / 2, 0, 0]
+            [(b * Math.PI) / 2, 0, 0],
+            [0.28, 2.4, 0.6],
+            true
           );
         }
         ductGroup.add(fanPivot);
         ductFanPivots.push(fanPivot);
       });
     } else {
-      // Side walls along Z
       addOutlinedMesh(
         ductGroup,
-        new THREE.BoxGeometry(wallThick, ductHeight, length),
+        UNIT_BOX_GEO,
         steelMat,
         outlineMat,
-        [-ductWidth / 2, ductHeight / 2, 0]
+        [-ductWidth / 2, ductHeight / 2, 0],
+        [0, 0, 0],
+        [wallThick, ductHeight, length],
+        true
       );
       addOutlinedMesh(
         ductGroup,
-        new THREE.BoxGeometry(wallThick, ductHeight, length),
+        UNIT_BOX_GEO,
         steelMat,
         outlineMat,
-        [ductWidth / 2, ductHeight / 2, 0]
+        [ductWidth / 2, ductHeight / 2, 0],
+        [0, 0, 0],
+        [wallThick, ductHeight, length],
+        true
       );
       colliders.push({
         minX: centerX - ductWidth / 2 - wallThick / 2,
@@ -408,13 +666,15 @@ export function buildArenaMap(
         isVentDuct: true,
       });
 
-      // Overhead Duct Roof Slab
       addOutlinedMesh(
         ductGroup,
-        new THREE.BoxGeometry(ductWidth + wallThick * 2, roofThick, length),
+        UNIT_BOX_GEO,
         steelMat,
         outlineMat,
-        [0, ductHeight + roofThick / 2, 0]
+        [0, ductHeight + roofThick / 2, 0],
+        [0, 0, 0],
+        [ductWidth + wallThick * 2, roofThick, length],
+        true
       );
       colliders.push({
         minX: centerX - ductWidth / 2 - wallThick,
@@ -427,19 +687,20 @@ export function buildArenaMap(
         isVentDuct: true,
       });
 
-      // 3 Internal Spinning Ventilation Turbine Fans along the Z duct
       [-length * 0.35, 0, length * 0.35].forEach((offsetZ) => {
         const fanPivot = new THREE.Group();
-        fanPivot.position.set(0, ductHeight - 1.5, offsetZ);
+        fanPivot.position.set(0, ductHeight - 1.6, offsetZ);
         fanPivot.rotation.y = Math.PI / 2;
         for (let b = 0; b < 4; b++) {
           addOutlinedMesh(
             fanPivot,
-            new THREE.BoxGeometry(0.25, 2.2, 0.55),
+            UNIT_BOX_GEO,
             yellowPostItMat,
             outlineMat,
             [0, 0, 0],
-            [(b * Math.PI) / 2, 0, 0]
+            [(b * Math.PI) / 2, 0, 0],
+            [0.28, 2.4, 0.6],
+            true
           );
         }
         ductGroup.add(fanPivot);
@@ -458,41 +719,72 @@ export function buildArenaMap(
     });
   };
 
-  // Build the 4 Inter-Room Ventilation Duct Tunnels (HVAC)
   buildVentilationDuctTunnel(
-    'duct_north',
-    'Condotto di Ventilazione Nord (Studio ⇄ Bagno)',
+    'duct_north_inner',
+    'Condotto HVAC Nord (Studio ⇄ Bagno)',
     0,
     -185,
-    170,
+    180,
     'x'
   );
   buildVentilationDuctTunnel(
-    'duct_south',
-    'Condotto di Ventilazione Sud (Cucina ⇄ Soggiorno)',
+    'duct_south_inner',
+    'Condotto HVAC Sud (Cucina ⇄ Soggiorno)',
     0,
     185,
-    170,
+    180,
     'x'
   );
   buildVentilationDuctTunnel(
-    'duct_west',
-    'Condotto di Ventilazione Ovest (Studio ⇄ Cucina)',
+    'duct_west_inner',
+    'Condotto HVAC Ovest (Studio ⇄ Cucina)',
     -185,
     0,
-    170,
+    180,
     'z'
   );
   buildVentilationDuctTunnel(
-    'duct_east',
-    'Condotto di Ventilazione Est (Bagno ⇄ Soggiorno)',
+    'duct_east_inner',
+    'Condotto HVAC Est (Bagno ⇄ Soggiorno)',
     185,
     0,
-    170,
+    180,
     'z'
   );
 
-  // Helper to build Stacked Book Corridors & Skybridges ("Corridoi fatti di Libri Impilati")
+  buildVentilationDuctTunnel(
+    'duct_north_outer',
+    'Mega-Condotto HVAC Nord Esterno (Studio ⇄ Bagno)',
+    0,
+    -480,
+    240,
+    'x'
+  );
+  buildVentilationDuctTunnel(
+    'duct_south_outer',
+    'Mega-Condotto HVAC Sud Esterno (Cucina ⇄ Soggiorno)',
+    0,
+    480,
+    240,
+    'x'
+  );
+  buildVentilationDuctTunnel(
+    'duct_west_outer',
+    'Mega-Condotto HVAC Ovest Esterno (Studio ⇄ Cucina)',
+    -480,
+    0,
+    240,
+    'z'
+  );
+  buildVentilationDuctTunnel(
+    'duct_east_outer',
+    'Mega-Condotto HVAC Est Esterno (Bagno ⇄ Soggiorno)',
+    480,
+    0,
+    240,
+    'z'
+  );
+
   const buildStackedBookCorridor = (
     name: string,
     centerX: number,
@@ -500,17 +792,16 @@ export function buildArenaMap(
     length: number,
     axis: 'x' | 'z'
   ) => {
-    const corridorGap = 15.0; // Wide passage between stacked book walls
-    const bookWallWidth = 8.5;
+    const corridorGap = 16.0;
+    const bookWallWidth = 9.0;
     const bookMats = [blueCupMat, redBookMat, greenBookMat, pinkPostItMat, yellowPostItMat];
     const segments = 5;
     const segLen = length / segments;
 
     for (let s = 0; s < segments; s++) {
       const offsetAlong = -length / 2 + segLen * (s + 0.5);
-      // 3 stacked books on each side of the corridor
       for (let tier = 0; tier < 3; tier++) {
-        const tierH = 2.4;
+        const tierH = 2.5;
         const y = tier * tierH;
         const matLeft = bookMats[(s + tier) % bookMats.length];
         const matRight = bookMats[(s + tier + 2) % bookMats.length];
@@ -524,7 +815,7 @@ export function buildArenaMap(
             tierH,
             bookWallWidth,
             matLeft,
-            `${name} · Tomo Nord T${tier + 1}`,
+            `${name} · Pila Nord T${tier + 1}`,
             { isBookBridge: true }
           );
           addBookBlock(
@@ -535,7 +826,7 @@ export function buildArenaMap(
             tierH,
             bookWallWidth,
             matRight,
-            `${name} · Tomo Sud T${tier + 1}`,
+            `${name} · Pila Sud T${tier + 1}`,
             { isBookBridge: true }
           );
         } else {
@@ -547,7 +838,7 @@ export function buildArenaMap(
             tierH,
             segLen * 0.96,
             matLeft,
-            `${name} · Tomo Ovest T${tier + 1}`,
+            `${name} · Pila Ovest T${tier + 1}`,
             { isBookBridge: true }
           );
           addBookBlock(
@@ -558,45 +849,43 @@ export function buildArenaMap(
             tierH,
             segLen * 0.96,
             matRight,
-            `${name} · Tomo Est T${tier + 1}`,
+            `${name} · Pila Est T${tier + 1}`,
             { isBookBridge: true }
           );
         }
       }
     }
 
-    // Overhead Stacked Book Skybridge Arch spanning across the center of the corridor (walkable above & hollow below!)
     if (axis === 'x') {
       addBookBlock(
         centerX,
-        7.2,
+        7.5,
         centerZ,
-        42.0,
-        1.8,
+        46.0,
+        2.0,
         corridorGap + bookWallWidth * 2,
         manilaEnvelopeMat,
         `${name} · Ponte Sospeso di Libri`,
         { isBookBridge: true }
       );
-      // Bounce-pad Post-it stairs at both entrances to leap onto the Book Skybridge!
       addBookBlock(
-        centerX - length / 2 - 8,
+        centerX - length / 2 - 9,
         0,
         centerZ - corridorGap / 2 - 4,
-        7.5,
-        2.2,
-        7.5,
+        8.0,
+        2.4,
+        8.0,
         yellowPostItMat,
         'Trampolino Post-It Ponte Libri',
         { isBouncePad: true }
       );
       addBookBlock(
-        centerX + length / 2 + 8,
+        centerX + length / 2 + 9,
         0,
         centerZ + corridorGap / 2 + 4,
-        7.5,
-        2.2,
-        7.5,
+        8.0,
+        2.4,
+        8.0,
         pinkPostItMat,
         'Trampolino Post-It Ponte Libri',
         { isBouncePad: true }
@@ -604,11 +893,11 @@ export function buildArenaMap(
     } else {
       addBookBlock(
         centerX,
-        7.2,
+        7.5,
         centerZ,
         corridorGap + bookWallWidth * 2,
-        1.8,
-        42.0,
+        2.0,
+        46.0,
         manilaEnvelopeMat,
         `${name} · Ponte Sospeso di Libri`,
         { isBookBridge: true }
@@ -616,10 +905,10 @@ export function buildArenaMap(
       addBookBlock(
         centerX - corridorGap / 2 - 4,
         0,
-        centerZ - length / 2 - 8,
-        7.5,
-        2.2,
-        7.5,
+        centerZ - length / 2 - 9,
+        8.0,
+        2.4,
+        8.0,
         yellowPostItMat,
         'Trampolino Post-It Ponte Libri',
         { isBouncePad: true }
@@ -627,10 +916,10 @@ export function buildArenaMap(
       addBookBlock(
         centerX + corridorGap / 2 + 4,
         0,
-        centerZ + length / 2 + 8,
-        7.5,
-        2.2,
-        7.5,
+        centerZ + length / 2 + 9,
+        8.0,
+        2.4,
+        8.0,
         pinkPostItMat,
         'Trampolino Post-It Ponte Libri',
         { isBouncePad: true }
@@ -638,57 +927,91 @@ export function buildArenaMap(
     }
   };
 
-  // Build the 4 Inter-Room Stacked Book Corridors & Skybridges!
+  buildStackedBookCorridor('Corridoio dei Dizionari (Studio ⇄ Bagno)', 0, -92, 144, 'x');
+  buildStackedBookCorridor('Corridoio dei Ricettari (Cucina ⇄ Soggiorno)', 0, 92, 144, 'x');
+  buildStackedBookCorridor('Galleria degli Atlanti (Studio ⇄ Cucina)', -92, 0, 144, 'z');
+  buildStackedBookCorridor('Galleria dei Romanzi (Bagno ⇄ Soggiorno)', 92, 0, 144, 'z');
+
   buildStackedBookCorridor(
-    'Corridoio dei Dizionari (Studio ⇄ Bagno)',
+    'Grande Corridoio delle Enciclopedie Nord (Studio ⇄ Bagno)',
     0,
-    -92,
-    136,
+    -340,
+    210,
     'x'
   );
   buildStackedBookCorridor(
-    'Corridoio dei Ricettari (Cucina ⇄ Soggiorno)',
+    'Grande Corridoio dei Manuali Sud (Cucina ⇄ Soggiorno)',
     0,
-    92,
-    136,
+    340,
+    210,
     'x'
   );
   buildStackedBookCorridor(
-    'Galleria degli Atlanti (Studio ⇄ Cucina)',
-    -92,
+    'Grande Galleria dei Quaderni Ovest (Studio ⇄ Cucina)',
+    -340,
     0,
-    136,
+    210,
     'z'
   );
   buildStackedBookCorridor(
-    'Galleria dei Romanzi (Bagno ⇄ Soggiorno)',
-    92,
+    'Grande Galleria dei Tomi Est (Bagno ⇄ Soggiorno)',
+    340,
     0,
-    136,
+    210,
     'z'
   );
 
   // ============================================================================
-  // STANZA 1 (NORD-OVEST: x in [-375, 0], z in [-375, 0]): LO STUDIO MEGA-VASTO
+  // STANZA 1 (NORD-OVEST: 760m x 760m, x in [-760, 0], z in [-760, 0]): LO STUDIO
   // ============================================================================
-  // 1A. Foreground Screenshot Cluster (near spawn so Title Screen & initial spawn match the screenshot!)
-  addBookBlock(-20, 0, -20, 12.0, 2.0, 9.0, blueCupMat, 'Dizionario Blu');
-  addBookBlock(-20.4, 2.0, -20.2, 11.0, 2.0, 8.2, redBookMat, 'Atlante Rosso');
-  addBookBlock(-19.8, 4.0, -19.8, 10.2, 1.8, 7.6, greenBookMat, 'Quaderno Verde');
+  addBookBlock(-18.5, 0, -19.2, 12.2, 1.9, 9.2, blueCupMat, 'Dizionario Blu', {}, 0.18);
+  addBookBlock(-18.8, 1.9, -19.4, 11.4, 1.9, 8.6, redBookMat, 'Atlante Rosso', {}, 0.12);
+  addBookBlock(-18.2, 3.8, -19.0, 10.6, 1.8, 8.0, greenBookMat, 'Quaderno Verde', {}, 0.22);
 
-  addBookBlock(-22.5, 0, -9.5, 8.4, 1.8, 7.0, greenBookMat, 'Manuale Verde');
-  addBookBlock(-22.2, 1.8, -9.5, 7.4, 1.6, 6.2, pinkPostItMat, 'Diario Rosa');
+  addBookBlock(-21.0, 0, -9.8, 8.8, 1.6, 7.2, greenBookMat, 'Manuale Verde Base', {}, 0.22);
+  addBookBlock(-20.8, 1.6, -9.7, 8.2, 1.5, 6.8, redBookMat, 'Diario Rosso', {}, 0.16);
+  addBookBlock(-20.5, 3.1, -9.5, 7.8, 1.5, 6.4, greenBookMat, 'Quaderno Chiaro', {}, 0.25);
 
-  addBookBlock(-10.5, 0, -12.5, 4.6, 1.3, 4.6, greenBookMat, 'Post-It Base');
-  addBookBlock(-10.4, 1.3, -12.5, 4.3, 1.3, 4.3, pinkPostItMat, 'Post-It Rosa');
-  addBookBlock(-10.3, 2.6, -12.4, 4.0, 1.3, 4.0, yellowPostItMat, 'Post-It Giallo');
-  addBookBlock(-10.5, 0, -5.5, 3.8, 1.2, 3.8, yellowPostItMat, 'Blocco Note');
+  addBookBlock(-10.8, 0, -13.2, 4.8, 1.25, 4.8, greenBookMat, 'Post-It Base Verde', {}, 0.24);
+  addBookBlock(-10.7, 1.25, -13.2, 4.5, 1.25, 4.5, pinkPostItMat, 'Post-It Rosa', {}, 0.18);
+  addBookBlock(-10.5, 2.5, -13.1, 4.3, 1.25, 4.3, yellowPostItMat, 'Post-It Giallo', {}, 0.28);
+  addBookBlock(-10.2, 0, -6.4, 3.9, 1.35, 3.9, yellowPostItMat, 'Blocco Note Post-It', {}, 0.26);
 
-  addBookBlock(-7.5, 0, -26.5, 14.0, 5.8, 2.8, manilaEnvelopeMat, 'Busta Gialla Gigante');
-  addPencilCupTower(-13.5, -24.5, 2.1, 4.8);
-  addPencilCupTower(3.5, -14.5, 2.0, 4.5);
+  addOpenManilaEnvelope(-5.8, -23.5, 13.5, 5.4, 2.8, 0.05);
+  addBookBlock(-1.2, 0, -3.6, 6.4, 0.45, 4.6, manilaEnvelopeMat, 'Busta Gialla Piatta', {}, -0.32);
 
-  // 1B. Mid-Sector & Deep Outer Studio Citadel (extending out to -340m!)
+  addScatteredPaperSheet(-6.8, -16.8, 4.4, 4.0, 0.22, 1);
+  addScatteredPaperSheet(-13.2, -5.2, 3.6, 3.4, -0.3, 2);
+  addSpiralNotebookProp(2.5, 0, -16.5, 5.2, 4.4, -0.24);
+
+  addPencilCupTower(-12.6, -23.2, 2.0, 4.6);
+  addPencilCupTower(4.8, -11.8, 2.0, 4.5);
+  addPencilCupTower(-4.2, -4.4, 1.15, 2.4);
+
+  const deskTrimLeft = addOutlinedMesh(
+    group,
+    UNIT_BOX_GEO,
+    woodMat,
+    outlineMat,
+    [-16.5, 0.22, 2.6],
+    [0, -0.46, 0],
+    [28.0, 0.55, 2.2],
+    true
+  );
+  registerTremblingProp(deskTrimLeft);
+  const deskTrimRight = addOutlinedMesh(
+    group,
+    UNIT_BOX_GEO,
+    woodMat,
+    outlineMat,
+    [10.5, 0.22, 1.8],
+    [0, 0.46, 0],
+    [26.0, 0.55, 2.2],
+    true
+  );
+  registerTremblingProp(deskTrimRight);
+
+  // Mid & Outer 760m Studio Citadels
   addBookBlock(-68, 0, -56, 28.0, 4.5, 22.0, blueCupMat, 'Enciclopedia Universale T1');
   addBookBlock(-68, 4.5, -56, 25.0, 4.5, 19.5, redBookMat, 'Enciclopedia Universale T2');
   addBookBlock(-68, 9.0, -56, 22.0, 4.2, 17.0, greenBookMat, 'Vetta dello Studio (Sniper Nest)');
@@ -700,7 +1023,6 @@ export function buildArenaMap(
     isBouncePad: true,
   });
 
-  // Deep North-West Mega-Fortress (-140m to -320m)
   addBookBlock(-145, 0, -135, 44.0, 6.0, 34.0, blueCupMat, 'Ziggurat Enciclopedica Base');
   addBookBlock(-145, 6.0, -135, 36.0, 6.0, 28.0, redBookMat, 'Ziggurat Enciclopedica Media');
   addBookBlock(-145, 12.0, -135, 28.0, 5.5, 22.0, greenBookMat, 'Ziggurat Enciclopedica Vetta');
@@ -710,46 +1032,79 @@ export function buildArenaMap(
 
   addBookBlock(-245, 0, -155, 52.0, 18.0, 8.0, manilaEnvelopeMat, 'Grande Muraglia di Buste');
   addBookBlock(-165, 0, -245, 48.0, 7.5, 32.0, greenBookMat, 'Quaderno ad Anelli Titanico');
-  addBookBlock(-265, 0, -265, 56.0, 9.0, 44.0, redBookMat, 'Archivio Storico Nord-Ovest');
+  addBookBlock(-285, 0, -285, 64.0, 10.0, 48.0, redBookMat, 'Archivio Storico Centrale');
+  addBookBlock(-440, 0, -420, 82.0, 12.0, 58.0, blueCupMat, 'Cittadella Esterna dei Dizionari');
+  addBookBlock(-580, 0, -540, 96.0, 16.0, 72.0, greenBookMat, 'Bastione Nord-Ovest 760m');
   addPencilCupTower(-195, -195, 6.2, 15.0);
-  addPencilCupTower(-110, -235, 5.5, 13.5);
+  addPencilCupTower(-380, -290, 9.0, 22.0);
+  addPencilCupTower(-520, -390, 11.0, 26.0);
 
-  // Overturned Coffee Mug + Absorbable Coffee Puddle
+  // Clean Overturned Coffee Mug + Double-Inked Coffee Puddle
   const mugGroup = new THREE.Group();
-  mugGroup.position.set(-7.8, 1.15, -2.0);
-  mugGroup.rotation.set(0.2, 0.6, Math.PI / 2.15);
+  mugGroup.position.set(-8.2, 1.15, -3.2);
+  mugGroup.rotation.set(0.24, 0.55, Math.PI / 2.12);
   addOutlinedMesh(
     mugGroup,
-    new THREE.CylinderGeometry(1.2, 1.05, 2.6, 14),
-    whitePagesMat,
-    outlineMat
-  );
-  addOutlinedMesh(
-    mugGroup,
-    new THREE.TorusGeometry(0.7, 0.18, 8, 14),
+    new THREE.CylinderGeometry(1.22, 1.06, 2.6, 16),
     whitePagesMat,
     outlineMat,
-    [1.05, 0, 0]
+    [0, 0, 0],
+    [0, 0, 0],
+    [1, 1, 1],
+    true
+  );
+  const mugInside = new THREE.Mesh(
+    new THREE.CircleGeometry(1.12, 14),
+    new THREE.MeshBasicMaterial({ color: 0x291306 })
+  );
+  mugInside.rotation.x = -Math.PI / 2;
+  mugInside.position.set(0, 1.31, 0);
+  mugInside.updateMatrix();
+  mugInside.matrixAutoUpdate = false;
+  mugGroup.add(mugInside);
+
+  addOutlinedMesh(
+    mugGroup,
+    new THREE.TorusGeometry(0.72, 0.18, 8, 14),
+    whitePagesMat,
+    outlineMat,
+    [0, -0.1, 1.05],
+    [0, 0, 0],
+    [1, 1, 1],
+    true
   );
   group.add(mugGroup);
   registerTremblingProp(mugGroup);
 
-  const coffeePuddleCenter = new THREE.Vector3(-5.5, 0, -1.5);
+  const coffeePuddleCenter = new THREE.Vector3(-7.4, 0, -2.5);
   const coffeePuddleMesh = new THREE.Mesh(
-    new THREE.CircleGeometry(4.6, 24),
+    new THREE.CircleGeometry(3.6, 24),
     new THREE.MeshStandardMaterial({
-      color: 0x3b1d0b,
-      roughness: 0.15,
+      map: createCrossHatchPastelTexture('#3e1f0d', maxAnisotropy),
+      roughness: 0.25,
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
     })
   );
+  coffeePuddleMesh.scale.set(1.28, 0.86, 1);
   coffeePuddleMesh.rotation.x = -Math.PI / 2;
-  coffeePuddleMesh.position.set(coffeePuddleCenter.x, 0.02, coffeePuddleCenter.z);
+  coffeePuddleMesh.position.set(coffeePuddleCenter.x, 0.022, coffeePuddleCenter.z);
+  const puddleOutlineRing = new THREE.Mesh(
+    new THREE.RingGeometry(3.52, 3.74, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0x141413,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    })
+  );
+  puddleOutlineRing.position.set(0, 0, 0.002);
+  coffeePuddleMesh.add(puddleOutlineRing);
   group.add(coffeePuddleMesh);
 
-  // Colossal Desk Fan ("Il Ventilatore da Tavolo con le pale")
+  // Colossal Desk Fan
   const fanPosition = new THREE.Vector3(-52, 0, -28);
   const fanGroup = new THREE.Group();
   fanGroup.position.copy(fanPosition);
@@ -758,55 +1113,66 @@ export function buildArenaMap(
     new THREE.CylinderGeometry(2.8, 3.6, 5.5, 14),
     steelMat,
     outlineMat,
-    [0, 2.75, 0]
+    [0, 2.75, 0],
+    [0, 0, 0],
+    [1, 1, 1],
+    true
   );
   const fanBladesPivot = new THREE.Group();
   fanBladesPivot.position.set(1.2, 6.4, 0);
   for (let b = 0; b < 3; b++) {
     addOutlinedMesh(
       fanBladesPivot,
-      new THREE.BoxGeometry(0.35, 5.2, 1.1),
+      UNIT_BOX_GEO,
       steelMat,
       outlineMat,
       [0, 0, 0],
-      [(b * Math.PI * 2) / 3, 0, 0]
+      [(b * Math.PI * 2) / 3, 0, 0],
+      [0.35, 5.2, 1.1],
+      true
     );
   }
   fanGroup.add(fanBladesPivot);
   group.add(fanGroup);
   registerTremblingProp(fanGroup);
 
-  // Colossal Swinging Desk Lamp ("Il Lampadario / Lampada")
+  // Colossal Swinging Desk Lamp
   const lampPivot = new THREE.Group();
   lampPivot.position.set(-38, 22.0, -38);
   addOutlinedMesh(
     lampPivot,
-    new THREE.CylinderGeometry(0.22, 0.22, 10.5, 8),
+    UNIT_CYL_GEO,
     steelMat,
     outlineMat,
-    [0, -5.25, 0]
+    [0, -5.25, 0],
+    [0, 0, 0],
+    [0.22, 10.5, 0.22],
+    true
   );
   addOutlinedMesh(
     lampPivot,
-    new THREE.ConeGeometry(4.2, 3.0, 16),
+    UNIT_CONE_GEO,
     yellowPostItMat,
     outlineMat,
-    [0, -10.8, 0]
+    [0, -10.8, 0],
+    [0, 0, 0],
+    [4.2, 3.0, 4.2],
+    true
   );
   group.add(lampPivot);
 
   // ============================================================================
-  // STANZA 2 (NORD-EST: x in [0, 375], z in [-375, 0]): IL BAGNO OLIMPIONICO VASTO
+  // STANZA 2 (NORD-EST: 760m x 760m, x in [0, 760], z in [-760, 0]): IL BAGNO
   // ============================================================================
-  // Olympic-Sized Bathtub (72m long x 34m wide!)
   const bathtubBounds = { minX: 46, maxX: 82, minZ: -172, maxZ: -102 };
   addBookBlock(64, 0, -137, 36.0, 4.0, 70.0, porcelainMat, 'Vasca da Bagno Olimpionica');
   const bathWater = new THREE.Mesh(new THREE.PlaneGeometry(32.0, 65.0), waterMat);
   bathWater.rotation.x = -Math.PI / 2;
   bathWater.position.set(64, 4.06, -137);
+  bathWater.updateMatrix();
+  bathWater.matrixAutoUpdate = false;
   group.add(bathWater);
 
-  // 6 Giant Rubber Ducks floating inside the Olympic Bathtub
   const duckCoords: [number, number][] = [
     [56, -160],
     [72, -150],
@@ -815,32 +1181,39 @@ export function buildArenaMap(
     [56, -120],
     [72, -110],
   ];
+  const beakMat = new THREE.MeshStandardMaterial({ color: 0xf97316 });
   duckCoords.forEach(([dx, dz]) => {
     const duck = new THREE.Group();
     duck.position.set(dx, 4.15, dz);
     addOutlinedMesh(
       duck,
-      new THREE.SphereGeometry(2.4, 12, 10),
+      UNIT_SPHERE_GEO,
       yellowPostItMat,
       outlineMat,
       [0, 0.8, 0],
       [0, 0, 0],
-      [1.1, 0.75, 1.35]
+      [2.6, 1.8, 3.2],
+      true
     );
     addOutlinedMesh(
       duck,
-      new THREE.SphereGeometry(1.4, 10, 10),
+      UNIT_SPHERE_GEO,
       yellowPostItMat,
       outlineMat,
-      [0, 2.5, 1.4]
+      [0, 2.5, 1.4],
+      [0, 0, 0],
+      [1.4, 1.4, 1.4],
+      true
     );
     addOutlinedMesh(
       duck,
-      new THREE.ConeGeometry(0.6, 1.2, 8),
-      new THREE.MeshStandardMaterial({ color: 0xf97316 }),
+      UNIT_CONE_GEO,
+      beakMat,
       outlineMat,
-      [0, 2.4, 2.7],
-      [Math.PI / 2, 0, 0]
+      [0, 2.4, 2.9],
+      [Math.PI / 2, 0, 0],
+      [0.6, 1.2, 0.6],
+      true
     );
     group.add(duck);
     rubberDucks.push(duck);
@@ -858,7 +1231,6 @@ export function buildArenaMap(
     });
   });
 
-  // Colossal Interactive WC Throne in Il Bagno
   const toiletBowlCenter = new THREE.Vector3(36, 0, -56);
   addBookBlock(
     toiletBowlCenter.x,
@@ -885,10 +1257,13 @@ export function buildArenaMap(
   toiletLidPivot.position.set(toiletBowlCenter.x, 5.5, toiletBowlCenter.z - 3.0);
   addOutlinedMesh(
     toiletLidPivot,
-    new THREE.CylinderGeometry(6.5, 6.5, 0.55, 18),
+    UNIT_CYL_GEO,
     whitePagesMat,
     outlineMat,
-    [0, 0.28, 4.8]
+    [0, 0.28, 4.8],
+    [0, 0, 0],
+    [6.5, 0.55, 6.5],
+    true
   );
   group.add(toiletLidPivot);
 
@@ -900,7 +1275,6 @@ export function buildArenaMap(
   flushVortexMesh.visible = false;
   group.add(flushVortexMesh);
 
-  // Deep Bathroom Landmarks (out to +320m, -320m)
   addBookBlock(135, 0, -135, 32.0, 8.5, 48.0, porcelainMat, 'Lavabo Monumentale Doppio');
   addBookBlock(135, 8.5, -135, 22.0, 2.5, 36.0, blueCupMat, 'Specchiera Panoramica');
   addBookBlock(225, 0, -215, 46.0, 6.0, 46.0, pinkPostItMat, 'Piramide di Asciugamani T1', {
@@ -910,6 +1284,8 @@ export function buildArenaMap(
     isBouncePad: true,
   });
   addBookBlock(165, 0, -265, 54.0, 11.0, 26.0, porcelainMat, 'Acquedotto di Porcellana');
+  addBookBlock(420, 0, -420, 76.0, 10.0, 110.0, porcelainMat, 'Terme Olimpioniche Nord-Est');
+  addBookBlock(560, 0, -540, 84.0, 14.0, 64.0, blueCupMat, 'Santuario degli Specchi 760m');
   addBookBlock(28, 0, -28, 7.2, 1.3, 4.6, pinkPostItMat, 'Saponetta Scivolosa 1 (SWISH!)', {
     isSoap: true,
   });
@@ -918,9 +1294,8 @@ export function buildArenaMap(
   });
 
   // ============================================================================
-  // STANZA 3 (SUD-OVEST: x in [-375, 0], z in [0, 375]): LA CUCINA GIGANTESCA
+  // STANZA 3 (SUD-OVEST: 760m x 760m, x in [-760, 0], z in [0, 760]): LA CUCINA
   // ============================================================================
-  // Colossal Spring Toaster ("Il Tostapane Catapulta")
   addBookBlock(-58, 0, 58, 16.0, 7.5, 11.5, steelMat, 'Tostapane Catapulta (Salta sopra!)', {
     isBouncePad: true,
     isToaster: true,
@@ -928,15 +1303,16 @@ export function buildArenaMap(
   for (let s = 0; s < 2; s++) {
     const toast = addOutlinedMesh(
       group,
-      new THREE.BoxGeometry(5.5, 5.5, 0.95),
+      UNIT_BOX_GEO,
       woodMat,
       outlineMat,
-      [-58, 8.2, 56.2 + s * 3.6]
+      [-58, 8.2, 56.2 + s * 3.6],
+      [0, 0, 0],
+      [5.5, 5.5, 0.95]
     );
     toastSlices.push(toast);
   }
 
-  // Mid & Deep Kitchen Landmarks (out to -330m, +330m)
   addBookBlock(-34, 0, 38, 18.0, 6.0, 18.0, steelMat, 'Pentolone in Acciaio Inox');
   addBookBlock(-82, 0, 34, 26.0, 2.4, 18.0, woodMat, 'Tagliere da Macellaio');
   addBookBlock(-135, 0, 135, 42.0, 10.5, 64.0, woodMat, 'Isola Centrale della Cucina');
@@ -944,8 +1320,9 @@ export function buildArenaMap(
   addBookBlock(-65, 0, 145, 32.0, 7.0, 22.0, redBookMat, 'Vassoio Lasagne Gigante');
   addBookBlock(-235, 0, 225, 58.0, 14.0, 42.0, woodMat, 'Dispensa Colossale Sud-Ovest');
   addBookBlock(-155, 0, 265, 46.0, 8.5, 34.0, steelMat, 'Frigorifero Orizzontale');
+  addBookBlock(-420, 0, 410, 88.0, 15.0, 62.0, woodMat, 'Tavola Imbandita Reale 760m');
+  addBookBlock(-560, 0, 550, 92.0, 18.0, 68.0, steelMat, 'Cella Frigorifera Titanica');
 
-  // Collectible Cork Helmet ("Il Tappo di Sughero") in the Kitchen
   const corkHelmetPickup = addOutlinedMesh(
     group,
     new THREE.CylinderGeometry(1.5, 1.2, 2.2, 14),
@@ -956,9 +1333,8 @@ export function buildArenaMap(
   registerTremblingProp(corkHelmetPickup);
 
   // ============================================================================
-  // STANZA 4 (SUD-EST: x in [0, 375], z in [0, 375]): IL SOGGIORNO STADIO
+  // STANZA 4 (SUD-EST: 760m x 760m, x in [0, 760], z in [0, 760]): IL SOGGIORNO
   // ============================================================================
-  // Stadium-Sized Trampoline Couch ("Il Divano Elastico")
   addBookBlock(78, 0, 135, 58.0, 6.0, 26.0, greenBookMat, 'Divano Trampolino Gigante (BOING!)', {
     isBouncePad: true,
   });
@@ -970,7 +1346,6 @@ export function buildArenaMap(
     isBouncePad: true,
   });
 
-  // Mid & Deep Living Room Landmarks (out to +330m, +330m)
   addBookBlock(78, 0, 58, 32.0, 4.2, 18.0, woodMat, 'Tavolino da Salotto');
   addBookBlock(155, 0, 125, 24.0, 15.0, 52.0, redBookMat, 'Libreria del Soggiorno');
   addBookBlock(36, 0, 135, 16.0, 3.0, 16.0, pinkPostItMat, 'Pouf Cuscino Morbido', {
@@ -980,20 +1355,20 @@ export function buildArenaMap(
     isBouncePad: true,
   });
   addBookBlock(275, 0, 155, 36.0, 18.0, 48.0, blueCupMat, 'Torre Enciclopedica Sud-Est');
+  addBookBlock(430, 0, 430, 94.0, 11.0, 48.0, greenBookMat, 'Mega-Divano Olimpico 760m', {
+    isBouncePad: true,
+  });
+  addBookBlock(570, 0, 550, 86.0, 22.0, 54.0, redBookMat, 'Grande Biblioteca del Soggiorno');
 
-  // Spring Tape Measure ("Il Metro a Nastro a Molla")
   addBookBlock(32, 0, 48, 7.2, 3.6, 7.2, yellowPostItMat, 'Metro a Nastro (ZIIIP!)', {
     isBouncePad: true,
     isTapeTrap: true,
   });
-
-  // Mouse Trap ("La Trappola per Topi")
   addBookBlock(22, 0, 26, 8.0, 0.95, 5.2, woodMat, 'Trappola per Topi (CLACK!)', {
     isBouncePad: true,
     isMouseTrap: true,
   });
 
-  // Colossal Vacuum Cleaner ("L'Aspirapolvere")
   const vacuumPosition = new THREE.Vector3(52, 0, 32);
   addBookBlock(
     vacuumPosition.x,
@@ -1006,17 +1381,124 @@ export function buildArenaMap(
     'Aspirapolvere Turbo'
   );
 
-  // Giant Rolling Glass Marble ("La Biglia")
   const rollingMarble = addOutlinedMesh(
     group,
-    new THREE.SphereGeometry(3.2, 18, 16),
+    UNIT_SPHERE_GEO,
     blueCupMat,
     outlineMat,
-    [42.0, 3.2, 68.0]
+    [42.0, 3.2, 68.0],
+    [0, 0, 0],
+    [3.2, 3.2, 3.2]
   );
   const marbleVel = new THREE.Vector3(14.5, 0, -11.2);
 
-  // Spawn 24 Paper Ammo Pickups across the rooms, Book Corridors, and HVAC Ducts!
+  // ============================================================================
+  // ARCHITETTURA ZERO-LAG PER MAPPE GIGANTI RICCHE DI DETTAGLI & AZIONI:
+  // 1) GPU HARDWARE INSTANCING (600+ Dettagli 3D in sole 5 Draw Call GPU!)
+  // 2) 64 OGGETTI FISICI REATTIVI ("Kinetic Props" calciabili e colpibili!)
+  // ============================================================================
+  const instancedMaterials = [
+    greenBookMat,
+    redBookMat,
+    blueCupMat,
+    yellowPostItMat,
+    pinkPostItMat,
+  ];
+  const INSTANCES_PER_MAT = 110; // 5 * 110 = 550 rich 3D detail blocks across all 4 rooms in 5 draw calls!
+  const _instDummy = new THREE.Object3D();
+
+  instancedMaterials.forEach((mat, mIdx) => {
+    const instMesh = new THREE.InstancedMesh(UNIT_BOX_GEO, mat, INSTANCES_PER_MAT);
+    instMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+
+    for (let i = 0; i < INSTANCES_PER_MAT; i++) {
+      // Distribute across all 4 rooms (both near-mid sectors and deep 760m sectors)
+      const seed = mIdx * 1000 + i * 37;
+      const roomQuadX = i % 2 === 0 ? -1 : 1;
+      const roomQuadZ = i % 4 < 2 ? -1 : 1;
+      const distRing = 28 + ((seed * 17) % 660);
+      const angle = ((seed * 29) % 100) * 0.014 + 0.08;
+
+      const px = roomQuadX * Math.cos(angle) * distRing;
+      const pz = roomQuadZ * Math.sin(angle) * distRing;
+
+      // Keep clear of X=0 and Z=0 divider walls & corridors
+      if (Math.abs(px) < 18 || Math.abs(pz) < 18) {
+        _instDummy.scale.set(0, 0, 0);
+        _instDummy.updateMatrix();
+        instMesh.setMatrixAt(i, _instDummy.matrix);
+        continue;
+      }
+
+      const w = 2.8 + (i % 5) * 1.4;
+      const h = 0.75 + (i % 3) * 0.65;
+      const d = 2.4 + (i % 4) * 1.2;
+      const yaw = ((seed % 60) - 30) * 0.02;
+
+      _instDummy.position.set(px, h * 0.5, pz);
+      _instDummy.rotation.set(0, yaw, 0);
+      _instDummy.scale.set(w, h, d);
+      _instDummy.updateMatrix();
+      instMesh.setMatrixAt(i, _instDummy.matrix);
+
+      if (shadowInstanceCount < MAX_INSTANCED_SHADOWS && i % 2 === 0) {
+        addBatchedFloorShadow(px + 0.25, pz + 0.25, w * 1.2, d * 1.2, yaw);
+      }
+    }
+    instMesh.instanceMatrix.needsUpdate = true;
+    instMesh.updateMatrix();
+    instMesh.matrixAutoUpdate = false;
+    group.add(instMesh);
+  });
+
+  // Commit the single batched floor shadow InstancedMesh
+  shadowInstancedMesh.count = shadowInstanceCount;
+  shadowInstancedMesh.instanceMatrix.needsUpdate = true;
+  shadowInstancedMesh.updateMatrix();
+  shadowInstancedMesh.matrixAutoUpdate = false;
+  group.add(shadowInstancedMesh);
+
+  // Spawn 56 Interactive Kinetic Physics Props (Kickable & Shootable Dominoes, Cans, Erasers & Dice!)
+  for (let k = 0; k < 56; k++) {
+    const kMat = instancedMaterials[k % instancedMaterials.length];
+    const isCylinder = k % 3 === 0;
+    const w = isCylinder ? 0.65 : 1.1;
+    const h = isCylinder ? 1.5 : 1.7;
+    const d = isCylinder ? 0.65 : 0.45;
+
+    // Place 24 in the immediate Studio & passages, and 32 across the other 3 rooms
+    let kx = 0;
+    let kz = 0;
+    if (k < 24) {
+      kx = -4 - (k % 6) * 4.5;
+      kz = -4 - Math.floor(k / 6) * 5.2;
+    } else {
+      const quadX = k % 2 === 0 ? -1 : 1;
+      const quadZ = k % 4 < 2 ? -1 : 1;
+      kx = quadX * (22 + (k * 13) % 160);
+      kz = quadZ * (22 + (k * 19) % 160);
+    }
+
+    const kMesh = addOutlinedMesh(
+      group,
+      isCylinder ? UNIT_CYL_GEO : UNIT_BOX_GEO,
+      kMat,
+      outlineMat,
+      [kx, h * 0.5, kz],
+      [0, (k * 0.7) % Math.PI, 0],
+      [w, h, d]
+    );
+    kineticProps.push({
+      mesh: kMesh,
+      position: kMesh.position,
+      velocity: new THREE.Vector3(),
+      rotVel: new THREE.Vector3(),
+      baseY: h * 0.5,
+      radius: Math.max(w, d) * 0.75,
+    });
+  }
+
+  // Spawn 28 Paper Ammo Pickups
   const paperGeo = new THREE.DodecahedronGeometry(0.95, 0);
   const paperMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
   const pickupCoords: [number, number][] = [
@@ -1024,26 +1506,30 @@ export function buildArenaMap(
     [-48, -42],
     [-115, -75],
     [-185, -145],
-    [0, -92], // Inside North Book Corridor
-    [0, -185], // Inside North HVAC Duct
+    [0, -92],
+    [0, -185],
+    [0, -340],
+    [0, -480],
     [36, -36],
     [82, -75],
     [145, -115],
-    [185, 0], // Inside East HVAC Duct
-    [92, 0], // Inside East Book Corridor
+    [185, 0],
+    [92, 0],
+    [340, 0],
+    [480, 0],
     [-35, 38],
     [-75, 75],
     [-145, 115],
-    [-185, 0], // Inside West HVAC Duct
-    [-92, 0], // Inside West Book Corridor
-    [0, 92], // Inside South Book Corridor
-    [0, 185], // Inside South HVAC Duct
+    [-185, 0],
+    [-92, 0],
+    [-340, 0],
+    [-480, 0],
+    [0, 92],
+    [0, 185],
+    [0, 340],
+    [0, 480],
     [35, 35],
-    [72, 65],
     [135, 95],
-    [195, 185],
-    [-215, 195],
-    [205, -195],
   ];
   pickupCoords.forEach(([px, pz]) => {
     const pMesh = addOutlinedMesh(group, paperGeo, paperMat, outlineMat, [px, 1.0, pz]);
@@ -1051,16 +1537,20 @@ export function buildArenaMap(
     paperPickups.push(pMesh);
   });
 
-  // Spawn Collectible Weapon Nodes for Scavenger Mode ("Trova le armi nella casa")
+  // Spawn Collectible Weapon Nodes for Scavenger Mode
   WEAPONS_ARSENAL.forEach((w) => {
     const nodeGroup = new THREE.Group();
     nodeGroup.position.set(w.spawnPos[0], w.spawnPos[1], w.spawnPos[2]);
 
     addOutlinedMesh(
       nodeGroup,
-      new THREE.BoxGeometry(2.0, 1.2, 2.0),
+      UNIT_BOX_GEO,
       new THREE.MeshStandardMaterial({ color: w.accentColor, roughness: 0.4 }),
-      outlineMat
+      outlineMat,
+      [0, 0, 0],
+      [0, 0, 0],
+      [2.0, 1.2, 2.0],
+      true
     );
     group.add(nodeGroup);
     registerTremblingProp(nodeGroup);
@@ -1073,17 +1563,16 @@ export function buildArenaMap(
   });
 
   // ============================================================================
-  // ULTRA-PERFORMANT 2D SPATIAL HASH GRID FOR O(1) COLLIDER QUERIES
+  // ULTRA-PERFORMANT O(1) 2D SPATIAL HASH GRID COVERING [-800m, +800m]
   // ============================================================================
-  const GRID_MIN = -400;
-  const GRID_CELL_SIZE = 38;
-  const GRID_COLS = 22; // Covers -400m to +436m on both X and Z
+  const GRID_MIN = -800;
+  const GRID_CELL_SIZE = 40;
+  const GRID_COLS = 40; // 40 x 40 = 1600 buckets
   const spatialBuckets: ColliderBox[][] = Array.from(
     { length: GRID_COLS * GRID_COLS },
     () => []
   );
 
-  // Pre-index every collider into all overlapping 38m x 38m cells (with 1.5m player radius padding)
   const pad = 1.5;
   for (let i = 0; i < colliders.length; i++) {
     const box = colliders[i];
@@ -1112,14 +1601,11 @@ export function buildArenaMap(
   }
 
   const queryNearbyColliders = (x: number, z: number): ColliderBox[] => {
-    const cx = Math.max(
-      0,
-      Math.min(GRID_COLS - 1, Math.floor((x - GRID_MIN) / GRID_CELL_SIZE))
-    );
-    const cz = Math.max(
-      0,
-      Math.min(GRID_COLS - 1, Math.floor((z - GRID_MIN) / GRID_CELL_SIZE))
-    );
+    const cx = Math.floor((x - GRID_MIN) / GRID_CELL_SIZE);
+    const cz = Math.floor((z - GRID_MIN) / GRID_CELL_SIZE);
+    if (cx < 0 || cx >= GRID_COLS || cz < 0 || cz >= GRID_COLS) {
+      return EMPTY_COLLIDER_BUCKET;
+    }
     return spatialBuckets[cz * GRID_COLS + cx];
   };
 
@@ -1127,9 +1613,11 @@ export function buildArenaMap(
     group,
     colliders,
     queryNearbyColliders,
+    worldHalfExtent: ROOM_SIZE - 8,
     ventDuctZones,
     ductFanPivots,
     tremblingProps,
+    kineticProps,
     paperPickups,
     weaponPickups,
     corkHelmetPickup,
