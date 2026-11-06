@@ -103,12 +103,13 @@ export default function App() {
   const [playerGluedCount, setPlayerGluedCount] = useState<number>(0);
   const [playerBlindTimer, setPlayerBlindTimer] = useState<number>(0);
   const [flushComboActive, setFlushComboActive] = useState<boolean>(false);
+  const [activePassageLabel, setActivePassageLabel] = useState<string | null>(null);
   const [comicPops, setComicPops] = useState<ComicPopText[]>([]);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
   const [gddOpen, setGddOpen] = useState<boolean>(false);
   const [killFeedMsg, setKillFeedMsg] = useState<string>(
-    'Mega-Casa 300x300m pronta! Shift=Scatto · Spazio=Salto · C=Accovaccia · R=Ricarica'
+    'Mega-Casa 760x760m pronta! Condotti HVAC + Corridoi di Libri + Spatial Grid O(1)'
   );
 
   const stateRef = useRef({
@@ -137,7 +138,7 @@ export default function App() {
     lastFireTime: 0,
     flushVortexTimer: 0,
     ammo: { ...INITIAL_MAGAZINES } as Record<WeaponId, number>,
-    teleportRoomRequested: null as HouseRoom | null,
+    teleportRoomRequested: null as HouseRoom | 'condotto_hvac' | 'corridoio_libri' | null,
     laserTargetPoint: new THREE.Vector3(14, 0.35, 14),
     laserActive: false,
   });
@@ -258,23 +259,23 @@ export default function App() {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf4efe1);
-    scene.fog = new THREE.FogExp2(0xf4efe1, 0.0022);
+    scene.fog = new THREE.FogExp2(0xf4efe1, 0.0012);
 
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
     pmremGenerator.dispose();
 
     const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0xd6d3d1, 0.98);
-    hemiLight.position.set(0, 65, 0);
+    hemiLight.position.set(0, 95, 0);
     scene.add(hemiLight);
 
     const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.32);
-    keyLight.position.set(38, 78, 36);
+    keyLight.position.set(55, 110, 48);
     keyLight.castShadow = !isSoftwareGl;
     keyLight.shadow.mapSize.set(1024, 1024);
     keyLight.shadow.camera.near = 2;
-    keyLight.shadow.camera.far = 220;
-    const d = 95;
+    keyLight.shadow.camera.far = 320;
+    const d = 135;
     keyLight.shadow.camera.left = -d;
     keyLight.shadow.camera.right = d;
     keyLight.shadow.camera.top = d;
@@ -287,7 +288,7 @@ export default function App() {
       72,
       (mountEl.clientWidth || window.innerWidth) / (mountEl.clientHeight || window.innerHeight),
       0.1,
-      650
+      1200
     );
     camera.rotation.order = 'YXZ';
     scene.add(camera);
@@ -990,14 +991,27 @@ export default function App() {
 
       boilingTimeUniform.value = elapsed;
 
-      // Room Teleport Request across the Colossal 300m x 300m 4-Room House
+      // Room & Connecting Pathway Teleport Request across the 760m x 760m Mega-House
       if (stateRef.current.teleportRoomRequested) {
         const targetRoom = stateRef.current.teleportRoomRequested;
         stateRef.current.teleportRoomRequested = null;
         if (targetRoom === 'scrivania') player.pos.set(-6, 0, -4);
-        else if (targetRoom === 'bagno') player.pos.set(34, 0, -44);
-        else if (targetRoom === 'cucina') player.pos.set(-42, 0, 44);
-        else if (targetRoom === 'soggiorno') player.pos.set(38, 0, 38);
+        else if (targetRoom === 'bagno') player.pos.set(42, 0, -72);
+        else if (targetRoom === 'cucina') player.pos.set(-48, 0, 48);
+        else if (targetRoom === 'soggiorno') player.pos.set(45, 0, 45);
+        else if (targetRoom === 'condotto_hvac') {
+          player.pos.set(-55, 0.3, -185);
+          player.yaw = -Math.PI / 2;
+          setKillFeedMsg(
+            'TELETRASPORTO: Sei all\'ingresso del Condotto di Ventilazione Nord (Studio ⇄ Bagno)!'
+          );
+        } else if (targetRoom === 'corridoio_libri') {
+          player.pos.set(-55, 0, -92);
+          player.yaw = -Math.PI / 2;
+          setKillFeedMsg(
+            'TELETRASPORTO: Sei nel Corridoio & Ponte Sospeso dei Libri Impilati (Studio ⇄ Bagno)!'
+          );
+        }
         player.vel.set(0, 0, 0);
       }
 
@@ -1110,13 +1124,33 @@ export default function App() {
           player.vel.addScaledVector(_toTarget, 14 * dt);
         }
 
-        const baseSpeed = stateRef.current.crouching
-          ? 8.5
-          : wantsSprint
-          ? 24.5
-          : player.slipperyTimer > 0
-          ? 24.0
-          : 15.0;
+        // Check if player is inside one of the 4 HVAC Ventilation Duct Tunnels
+        let inDuctZoneName: string | null = null;
+        if (player.pos.y < 6.8) {
+          for (let dIdx = 0; dIdx < currentArena.ventDuctZones.length; dIdx++) {
+            const dz = currentArena.ventDuctZones[dIdx];
+            if (
+              player.pos.x >= dz.minX &&
+              player.pos.x <= dz.maxX &&
+              player.pos.z >= dz.minZ &&
+              player.pos.z <= dz.maxZ
+            ) {
+              inDuctZoneName = dz.name;
+              break;
+            }
+          }
+        }
+        setActivePassageLabel((prev) => (prev === inDuctZoneName ? prev : inDuctZoneName));
+
+        const ductBoostMultiplier = inDuctZoneName ? 1.55 : 1.0;
+        const baseSpeed =
+          (stateRef.current.crouching
+            ? 8.5
+            : wantsSprint
+            ? 25.5
+            : player.slipperyTimer > 0
+            ? 24.5
+            : 15.5) * ductBoostMultiplier;
         const damping = player.slipperyTimer > 0 ? 1.8 : 11.0;
 
         player.vel.x = THREE.MathUtils.damp(player.vel.x, _moveVec.x * baseSpeed, damping, dt);
@@ -1124,8 +1158,8 @@ export default function App() {
         player.vel.y -= 26.0 * dt;
 
         player.pos.addScaledVector(player.vel, dt);
-        player.pos.x = THREE.MathUtils.clamp(player.pos.x, -142, 142);
-        player.pos.z = THREE.MathUtils.clamp(player.pos.z, -142, 142);
+        player.pos.x = THREE.MathUtils.clamp(player.pos.x, -372, 372);
+        player.pos.z = THREE.MathUtils.clamp(player.pos.z, -372, 372);
 
         // Update current room indicator based on quadrant
         const newRoom: HouseRoom =
@@ -1138,21 +1172,30 @@ export default function App() {
             : 'soggiorno';
         setCurrentRoom((prev) => (prev === newRoom ? prev : newRoom));
 
-        // Collisions & Interactive Bounce Pads (Toaster, Couch, Duck, Tape Measure, Mouse Trap, Soap)
+        // ULTRA-PERFORMANT O(1) SPATIAL HASH GRID COLLISIONS
+        // Only checks the 3-8 colliders in the player's current 38m x 38m grid cell!
         let floorHeight = 0;
         let hitBouncePad = false;
         let hitDuck = false;
         let hitToaster = false;
         let hitTrapLaunch = false;
 
-        for (const box of currentArena.colliders) {
+        const nearbyColliders = currentArena.queryNearbyColliders(player.pos.x, player.pos.z);
+        for (let cIdx = 0; cIdx < nearbyColliders.length; cIdx++) {
+          const box = nearbyColliders[cIdx];
           if (
             player.pos.x > box.minX - 0.45 &&
             player.pos.x < box.maxX + 0.45 &&
             player.pos.z > box.minZ - 0.45 &&
             player.pos.z < box.maxZ + 0.45
           ) {
-            if (player.pos.y >= box.topY - 0.7) {
+            const boxBottom = box.bottomY ?? 0;
+            // If this collider is an overhead duct ceiling or book skybridge and the player is walking underneath it, skip!
+            if (boxBottom > 0 && player.pos.y + player.eyeHeight < boxBottom + 0.25) {
+              continue;
+            }
+
+            if (player.pos.y >= box.topY - 0.75) {
               floorHeight = Math.max(floorHeight, box.topY);
               if (box.isBouncePad) hitBouncePad = true;
               if (box.isDuck) hitDuck = true;
@@ -1160,8 +1203,21 @@ export default function App() {
               if (box.isTapeTrap || box.isMouseTrap) hitTrapLaunch = true;
               if (box.isSoap) player.slipperyTimer = 1.4;
             } else {
-              if (player.pos.x < (box.minX + box.maxX) * 0.5) player.pos.x = box.minX - 0.45;
-              else player.pos.x = box.maxX + 0.45;
+              // Push out along the shallowest penetration axis (X or Z) so corridors & ducts guide smoothly!
+              const penLeft = player.pos.x - (box.minX - 0.45);
+              const penRight = box.maxX + 0.45 - player.pos.x;
+              const penFront = player.pos.z - (box.minZ - 0.45);
+              const penBack = box.maxZ + 0.45 - player.pos.z;
+              const minPenX = Math.min(penLeft, penRight);
+              const minPenZ = Math.min(penFront, penBack);
+
+              if (minPenX < minPenZ) {
+                if (penLeft < penRight) player.pos.x = box.minX - 0.45;
+                else player.pos.x = box.maxX + 0.45;
+              } else {
+                if (penFront < penBack) player.pos.z = box.minZ - 0.45;
+                else player.pos.z = box.maxZ + 0.45;
+              }
             }
           }
         }
@@ -1326,31 +1382,34 @@ export default function App() {
         }
       }
 
-      // Animate Environmental Chaos Props (Fan Blades, Swinging Lamp, Toaster Bread, Rolling Marble)
+      // Animate Environmental Chaos Props (Fan Blades, HVAC Duct Turbines, Swinging Lamp, Toaster Bread, Rolling Marble)
       currentArena.fanBladesPivot.rotation.x += dt * 18;
+      for (let fIdx = 0; fIdx < currentArena.ductFanPivots.length; fIdx++) {
+        currentArena.ductFanPivots[fIdx].rotation.x += dt * 22;
+      }
       currentArena.lampPivot.rotation.z = Math.sin(elapsed * 2.2) * 0.24;
       currentArena.toastSlices.forEach((toast, idx) => {
-        toast.position.y = 8.0 + Math.abs(Math.sin(elapsed * 3.2 + idx)) * 5.2;
+        toast.position.y = 8.2 + Math.abs(Math.sin(elapsed * 3.2 + idx)) * 5.4;
       });
 
-      // Rolling Marble in Colossal Living Room
+      // Rolling Marble in Mega-Vast Living Room
       currentArena.rollingMarble.position.addScaledVector(currentArena.marbleVel, dt);
       currentArena.rollingMarble.rotation.x += dt * 5;
       if (
-        currentArena.rollingMarble.position.x > 125 ||
+        currentArena.rollingMarble.position.x > 260 ||
         currentArena.rollingMarble.position.x < 10
       ) {
         currentArena.marbleVel.x *= -1;
       }
       if (
-        currentArena.rollingMarble.position.z > 125 ||
+        currentArena.rollingMarble.position.z > 260 ||
         currentArena.rollingMarble.position.z < 10
       ) {
         currentArena.marbleVel.z *= -1;
       }
 
       currentArena.rubberDucks.forEach((duck, idx) => {
-        duck.position.y = 3.95 + Math.sin(elapsed * 2.5 + idx) * 0.22;
+        duck.position.y = 4.15 + Math.sin(elapsed * 2.5 + idx) * 0.24;
       });
 
       // Animate Boss 1: Il Padrone di Casa ("Domestic Chaos")
@@ -1750,8 +1809,8 @@ export default function App() {
           );
 
           bot.position.addScaledVector(bot.velocity, dt);
-          bot.position.x = THREE.MathUtils.clamp(bot.position.x, -136, 136);
-          bot.position.z = THREE.MathUtils.clamp(bot.position.z, -136, 136);
+          bot.position.x = THREE.MathUtils.clamp(bot.position.x, -360, 360);
+          bot.position.z = THREE.MathUtils.clamp(bot.position.z, -360, 360);
           bot.group.rotation.y = bot.rotationY;
 
           const swing =
@@ -1944,7 +2003,9 @@ export default function App() {
               />
             </div>
             <div className="text-[11px] font-hand font-bold text-zinc-800">
-              Stanza: {currentRoom.toUpperCase()} {hasCorkHelmet ? '· Elmo Sughero' : ''}
+              Stanza: {currentRoom.toUpperCase()} (760×760m){' '}
+              {activePassageLabel ? `· ${activePassageLabel}` : ''}{' '}
+              {hasCorkHelmet ? '· Elmo Sughero' : ''}
             </div>
           </div>
         </div>
@@ -2197,7 +2258,7 @@ export default function App() {
             })}
           </div>
 
-          {/* Room Teleporters + Arsenal Mode + Boss Selector */}
+          {/* Room & Connecting Tunnel Teleporters + Arsenal Mode + Boss Selector */}
           <div className="flex items-center gap-1 overflow-x-auto shrink-0">
             {(['scrivania', 'bagno', 'cucina', 'soggiorno'] as HouseRoom[]).map((r) => (
               <button
@@ -2210,6 +2271,26 @@ export default function App() {
                 {r.charAt(0).toUpperCase() + r.slice(1)}
               </button>
             ))}
+
+            <button
+              onClick={() => {
+                stateRef.current.teleportRoomRequested = 'condotto_hvac';
+              }}
+              className="px-2 py-0.5 text-[11px] font-hand font-bold bg-sky-200 hover:bg-sky-300 text-zinc-950 border border-zinc-900 rounded cursor-pointer whitespace-nowrap shrink-0"
+              title="Teletrasporta al Condotto di Ventilazione HVAC"
+            >
+              Condotto HVAC
+            </button>
+
+            <button
+              onClick={() => {
+                stateRef.current.teleportRoomRequested = 'corridoio_libri';
+              }}
+              className="px-2 py-0.5 text-[11px] font-hand font-bold bg-emerald-200 hover:bg-emerald-300 text-zinc-950 border border-zinc-900 rounded cursor-pointer whitespace-nowrap shrink-0"
+              title="Teletrasporta al Corridoio & Ponte di Libri Impilati"
+            >
+              Corridoio Libri
+            </button>
 
             <button
               onClick={() =>

@@ -13,9 +13,22 @@ export interface WeaponPickupNode {
   collected: boolean;
 }
 
+export interface VentDuctZone {
+  id: string;
+  name: string;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  axis: 'x' | 'z';
+}
+
 export interface BuiltArena {
   group: THREE.Group;
   colliders: ColliderBox[];
+  queryNearbyColliders: (x: number, z: number) => ColliderBox[];
+  ventDuctZones: VentDuctZone[];
+  ductFanPivots: THREE.Group[];
   tremblingProps: THREE.Object3D[];
   paperPickups: THREE.Mesh[];
   weaponPickups: WeaponPickupNode[];
@@ -44,6 +57,8 @@ export function buildArenaMap(
 ): BuiltArena {
   const group = new THREE.Group();
   const colliders: ColliderBox[] = [];
+  const ventDuctZones: VentDuctZone[] = [];
+  const ductFanPivots: THREE.Group[] = [];
   const tremblingProps: THREE.Object3D[] = [];
   const paperPickups: THREE.Mesh[] = [];
   const weaponPickups: WeaponPickupNode[] = [];
@@ -99,24 +114,29 @@ export function buildArenaMap(
     roughness: 0.35,
     metalness: 0.55,
   });
+  const ductDarkSteelMat = new THREE.MeshStandardMaterial({
+    map: createCrossHatchPastelTexture('#94a3b8', maxAnisotropy),
+    roughness: 0.4,
+    metalness: 0.6,
+  });
   const whitePagesMat = new THREE.MeshStandardMaterial({
     color: 0xfefce8,
     roughness: 0.8,
   });
 
-  // Scale graph paper repeat so squares stay crisp across the colossal 300m x 300m arena!
-  graphPaperTex.repeat.set(95, 95);
+  // Scale graph paper repeat so squares stay crisp across the mega-vast 760m x 760m arena!
+  graphPaperTex.repeat.set(220, 220);
   graphPaperTex.needsUpdate = true;
 
-  // Colossal Wooden Desk / House Floor Slab (340m x 340m)
-  const outerFloor = new THREE.Mesh(new THREE.BoxGeometry(340, 2.0, 340), woodMat);
-  outerFloor.position.set(0, -1.04, 0);
+  // Mega-Vast Wooden Desk / House Floor Slab (840m x 840m)
+  const outerFloor = new THREE.Mesh(new THREE.BoxGeometry(840, 2.4, 840), woodMat);
+  outerFloor.position.set(0, -1.24, 0);
   outerFloor.receiveShadow = true;
   group.add(outerFloor);
 
-  // Colossal Sketchbook Paper Sheet covering the 4-Room Mega-House (300m x 300m -> 150m x 150m per room!)
+  // Mega-Vast Sketchbook Paper Sheet covering the 4-Room Mega-House (760m x 760m -> 380m x 380m per room!)
   const paperSheet = new THREE.Mesh(
-    new THREE.PlaneGeometry(300, 300),
+    new THREE.PlaneGeometry(760, 760),
     new THREE.MeshStandardMaterial({
       map: graphPaperTex,
       roughness: 0.85,
@@ -127,7 +147,7 @@ export function buildArenaMap(
   paperSheet.receiveShadow = true;
   group.add(paperSheet);
 
-  // Room Divider Cardboard Walls with Wide Monumental Doorways connecting the 4 colossal rooms
+  // Room Divider Cardboard Walls with Wide Doorways + Passages for Book Corridors (±92m) and HVAC Ducts (±185m)
   const wallMat = new THREE.MeshStandardMaterial({
     map: createCrossHatchPastelTexture('#f3e8d2', maxAnisotropy),
     roughness: 0.8,
@@ -139,22 +159,33 @@ export function buildArenaMap(
       maxX: x + w / 2,
       minZ: z - d / 2,
       maxZ: z + d / 2,
+      bottomY: 0,
       topY: h,
       label,
     });
   };
 
-  // North-South Divider Walls (with wide central & mid-room doorways across the 300m span)
-  buildWallSegment(0, -105, 1.8, 16.0, 72, 'Parete Divisoria Nord-Est/Ovest');
-  buildWallSegment(0, -34, 1.8, 16.0, 34, 'Parete Divisoria Centro-Nord');
-  buildWallSegment(0, 34, 1.8, 16.0, 34, 'Parete Divisoria Centro-Sud');
-  buildWallSegment(0, 105, 1.8, 16.0, 72, 'Parete Divisoria Sud-Est/Ovest');
+  // North-South Divider Wall segments along X = 0 (leaving openings at Z=0, Z=±92 for Book Corridors, Z=±185 for HVAC Ducts, Z=±280)
+  buildWallSegment(0, -45, 2.2, 18.0, 56, 'Parete Divisoria Nord-1');
+  buildWallSegment(0, -138, 2.2, 18.0, 62, 'Parete Divisoria Nord-2');
+  buildWallSegment(0, -240, 2.2, 18.0, 76, 'Parete Divisoria Nord-3');
+  buildWallSegment(0, -335, 2.2, 18.0, 70, 'Parete Divisoria Nord-Esterna');
 
-  // West-East Divider Walls (with wide central & mid-room doorways across the 300m span)
-  buildWallSegment(-105, 0, 72, 16.0, 1.8, 'Parete Divisoria Ovest');
-  buildWallSegment(-34, 0, 34, 16.0, 1.8, 'Parete Divisoria Centro-Ovest');
-  buildWallSegment(34, 0, 34, 16.0, 1.8, 'Parete Divisoria Centro-Est');
-  buildWallSegment(105, 0, 72, 16.0, 1.8, 'Parete Divisoria Est');
+  buildWallSegment(0, 45, 2.2, 18.0, 56, 'Parete Divisoria Sud-1');
+  buildWallSegment(0, 138, 2.2, 18.0, 62, 'Parete Divisoria Sud-2');
+  buildWallSegment(0, 240, 2.2, 18.0, 76, 'Parete Divisoria Sud-3');
+  buildWallSegment(0, 335, 2.2, 18.0, 70, 'Parete Divisoria Sud-Esterna');
+
+  // West-East Divider Wall segments along Z = 0 (leaving openings at X=0, X=±92 for Book Corridors, X=±185 for HVAC Ducts, X=±280)
+  buildWallSegment(-45, 0, 56, 18.0, 2.2, 'Parete Divisoria Ovest-1');
+  buildWallSegment(-138, 0, 62, 18.0, 2.2, 'Parete Divisoria Ovest-2');
+  buildWallSegment(-240, 0, 76, 18.0, 2.2, 'Parete Divisoria Ovest-3');
+  buildWallSegment(-335, 0, 70, 18.0, 2.2, 'Parete Divisoria Ovest-Esterna');
+
+  buildWallSegment(45, 0, 56, 18.0, 2.2, 'Parete Divisoria Est-1');
+  buildWallSegment(138, 0, 62, 18.0, 2.2, 'Parete Divisoria Est-2');
+  buildWallSegment(240, 0, 76, 18.0, 2.2, 'Parete Divisoria Est-3');
+  buildWallSegment(335, 0, 70, 18.0, 2.2, 'Parete Divisoria Est-Esterna');
 
   const addBookBlock = (
     x: number,
@@ -190,6 +221,7 @@ export function buildArenaMap(
       maxX: x + w / 2,
       minZ: z - d / 2,
       maxZ: z + d / 2,
+      bottomY: y,
       topY: y + h,
       label,
       ...extraFlags,
@@ -207,7 +239,6 @@ export function buildArenaMap(
       outlineMat,
       [0, height / 2, 0]
     );
-    // Giant colored pencils sticking out of the cup (just like the reference screenshot!)
     const pencilMats = [yellowPostItMat, pinkPostItMat, greenBookMat, redBookMat];
     for (let i = 0; i < 4; i++) {
       const angle = (i * Math.PI) / 2 + 0.3;
@@ -227,13 +258,418 @@ export function buildArenaMap(
       maxX: x + radius,
       minZ: z - radius,
       maxZ: z + radius,
+      bottomY: 0,
       topY: height,
       label: 'Portamatite Gigante',
     });
   };
 
   // ============================================================================
-  // STANZA 1 (NORD-OVEST: x in [-145, 0], z in [-145, 0]): LO STUDIO COLOSSALE
+  // NUOVI PERCORSI DI COLLEGAMENTO TRA LE 4 STANZE:
+  // A) 4 CONDOTTI DI VENTILAZIONE IN LAMIERA (HVAC AIR DUCT TUNNELS)
+  // B) 4 CORRIDOI & PONTI SOSPESI DI LIBRI IMPILATI (STACKED BOOK CORRIDORS)
+  // ============================================================================
+  const buildVentilationDuctTunnel = (
+    id: string,
+    name: string,
+    centerX: number,
+    centerZ: number,
+    length: number,
+    axis: 'x' | 'z'
+  ) => {
+    const ductWidth = 15.0; // Wide interior so players and bots can sprint through!
+    const wallThick = 1.2;
+    const ductHeight = 7.4;
+    const roofThick = 1.1;
+
+    const ductGroup = new THREE.Group();
+    ductGroup.position.set(centerX, 0, centerZ);
+    group.add(ductGroup);
+
+    const spanX = axis === 'x' ? length : ductWidth;
+    const spanZ = axis === 'z' ? length : ductWidth;
+
+    // Galvanized Steel Floor Plate inside the Ventilation Duct
+    addOutlinedMesh(
+      ductGroup,
+      new THREE.BoxGeometry(spanX, 0.25, spanZ),
+      ductDarkSteelMat,
+      outlineMat,
+      [0, 0.125, 0]
+    );
+
+    if (axis === 'x') {
+      // Side walls along X
+      addOutlinedMesh(
+        ductGroup,
+        new THREE.BoxGeometry(length, ductHeight, wallThick),
+        steelMat,
+        outlineMat,
+        [0, ductHeight / 2, -ductWidth / 2]
+      );
+      addOutlinedMesh(
+        ductGroup,
+        new THREE.BoxGeometry(length, ductHeight, wallThick),
+        steelMat,
+        outlineMat,
+        [0, ductHeight / 2, ductWidth / 2]
+      );
+      colliders.push({
+        minX: centerX - length / 2,
+        maxX: centerX + length / 2,
+        minZ: centerZ - ductWidth / 2 - wallThick / 2,
+        maxZ: centerZ - ductWidth / 2 + wallThick / 2,
+        bottomY: 0,
+        topY: ductHeight,
+        label: `${name} (Parete Nord)`,
+        isVentDuct: true,
+      });
+      colliders.push({
+        minX: centerX - length / 2,
+        maxX: centerX + length / 2,
+        minZ: centerZ + ductWidth / 2 - wallThick / 2,
+        maxZ: centerZ + ductWidth / 2 + wallThick / 2,
+        bottomY: 0,
+        topY: ductHeight,
+        label: `${name} (Parete Sud)`,
+        isVentDuct: true,
+      });
+
+      // Overhead Duct Roof Slab (walkable on top AND hollow underneath via bottomY!)
+      addOutlinedMesh(
+        ductGroup,
+        new THREE.BoxGeometry(length, roofThick, ductWidth + wallThick * 2),
+        steelMat,
+        outlineMat,
+        [0, ductHeight + roofThick / 2, 0]
+      );
+      colliders.push({
+        minX: centerX - length / 2,
+        maxX: centerX + length / 2,
+        minZ: centerZ - ductWidth / 2 - wallThick,
+        maxZ: centerZ + ductWidth / 2 + wallThick,
+        bottomY: ductHeight - 0.2,
+        topY: ductHeight + roofThick,
+        label: `${name} (Tetto Condotto)`,
+        isVentDuct: true,
+      });
+
+      // 3 Internal Spinning Ventilation Turbine Fans along the duct
+      [-length * 0.35, 0, length * 0.35].forEach((offsetX) => {
+        const fanPivot = new THREE.Group();
+        fanPivot.position.set(offsetX, ductHeight - 1.5, 0);
+        for (let b = 0; b < 4; b++) {
+          addOutlinedMesh(
+            fanPivot,
+            new THREE.BoxGeometry(0.25, 2.2, 0.55),
+            yellowPostItMat,
+            outlineMat,
+            [0, 0, 0],
+            [(b * Math.PI) / 2, 0, 0]
+          );
+        }
+        ductGroup.add(fanPivot);
+        ductFanPivots.push(fanPivot);
+      });
+    } else {
+      // Side walls along Z
+      addOutlinedMesh(
+        ductGroup,
+        new THREE.BoxGeometry(wallThick, ductHeight, length),
+        steelMat,
+        outlineMat,
+        [-ductWidth / 2, ductHeight / 2, 0]
+      );
+      addOutlinedMesh(
+        ductGroup,
+        new THREE.BoxGeometry(wallThick, ductHeight, length),
+        steelMat,
+        outlineMat,
+        [ductWidth / 2, ductHeight / 2, 0]
+      );
+      colliders.push({
+        minX: centerX - ductWidth / 2 - wallThick / 2,
+        maxX: centerX - ductWidth / 2 + wallThick / 2,
+        minZ: centerZ - length / 2,
+        maxZ: centerZ + length / 2,
+        bottomY: 0,
+        topY: ductHeight,
+        label: `${name} (Parete Ovest)`,
+        isVentDuct: true,
+      });
+      colliders.push({
+        minX: centerX + ductWidth / 2 - wallThick / 2,
+        maxX: centerX + ductWidth / 2 + wallThick / 2,
+        minZ: centerZ - length / 2,
+        maxZ: centerZ + length / 2,
+        bottomY: 0,
+        topY: ductHeight,
+        label: `${name} (Parete Est)`,
+        isVentDuct: true,
+      });
+
+      // Overhead Duct Roof Slab
+      addOutlinedMesh(
+        ductGroup,
+        new THREE.BoxGeometry(ductWidth + wallThick * 2, roofThick, length),
+        steelMat,
+        outlineMat,
+        [0, ductHeight + roofThick / 2, 0]
+      );
+      colliders.push({
+        minX: centerX - ductWidth / 2 - wallThick,
+        maxX: centerX + ductWidth / 2 + wallThick,
+        minZ: centerZ - length / 2,
+        maxZ: centerZ + length / 2,
+        bottomY: ductHeight - 0.2,
+        topY: ductHeight + roofThick,
+        label: `${name} (Tetto Condotto)`,
+        isVentDuct: true,
+      });
+
+      // 3 Internal Spinning Ventilation Turbine Fans along the Z duct
+      [-length * 0.35, 0, length * 0.35].forEach((offsetZ) => {
+        const fanPivot = new THREE.Group();
+        fanPivot.position.set(0, ductHeight - 1.5, offsetZ);
+        fanPivot.rotation.y = Math.PI / 2;
+        for (let b = 0; b < 4; b++) {
+          addOutlinedMesh(
+            fanPivot,
+            new THREE.BoxGeometry(0.25, 2.2, 0.55),
+            yellowPostItMat,
+            outlineMat,
+            [0, 0, 0],
+            [(b * Math.PI) / 2, 0, 0]
+          );
+        }
+        ductGroup.add(fanPivot);
+        ductFanPivots.push(fanPivot);
+      });
+    }
+
+    ventDuctZones.push({
+      id,
+      name,
+      minX: centerX - spanX / 2,
+      maxX: centerX + spanX / 2,
+      minZ: centerZ - spanZ / 2,
+      maxZ: centerZ + spanZ / 2,
+      axis,
+    });
+  };
+
+  // Build the 4 Inter-Room Ventilation Duct Tunnels (HVAC)
+  buildVentilationDuctTunnel(
+    'duct_north',
+    'Condotto di Ventilazione Nord (Studio ⇄ Bagno)',
+    0,
+    -185,
+    170,
+    'x'
+  );
+  buildVentilationDuctTunnel(
+    'duct_south',
+    'Condotto di Ventilazione Sud (Cucina ⇄ Soggiorno)',
+    0,
+    185,
+    170,
+    'x'
+  );
+  buildVentilationDuctTunnel(
+    'duct_west',
+    'Condotto di Ventilazione Ovest (Studio ⇄ Cucina)',
+    -185,
+    0,
+    170,
+    'z'
+  );
+  buildVentilationDuctTunnel(
+    'duct_east',
+    'Condotto di Ventilazione Est (Bagno ⇄ Soggiorno)',
+    185,
+    0,
+    170,
+    'z'
+  );
+
+  // Helper to build Stacked Book Corridors & Skybridges ("Corridoi fatti di Libri Impilati")
+  const buildStackedBookCorridor = (
+    name: string,
+    centerX: number,
+    centerZ: number,
+    length: number,
+    axis: 'x' | 'z'
+  ) => {
+    const corridorGap = 15.0; // Wide passage between stacked book walls
+    const bookWallWidth = 8.5;
+    const bookMats = [blueCupMat, redBookMat, greenBookMat, pinkPostItMat, yellowPostItMat];
+    const segments = 5;
+    const segLen = length / segments;
+
+    for (let s = 0; s < segments; s++) {
+      const offsetAlong = -length / 2 + segLen * (s + 0.5);
+      // 3 stacked books on each side of the corridor
+      for (let tier = 0; tier < 3; tier++) {
+        const tierH = 2.4;
+        const y = tier * tierH;
+        const matLeft = bookMats[(s + tier) % bookMats.length];
+        const matRight = bookMats[(s + tier + 2) % bookMats.length];
+
+        if (axis === 'x') {
+          addBookBlock(
+            centerX + offsetAlong,
+            y,
+            centerZ - corridorGap / 2 - bookWallWidth / 2,
+            segLen * 0.96,
+            tierH,
+            bookWallWidth,
+            matLeft,
+            `${name} · Tomo Nord T${tier + 1}`,
+            { isBookBridge: true }
+          );
+          addBookBlock(
+            centerX + offsetAlong,
+            y,
+            centerZ + corridorGap / 2 + bookWallWidth / 2,
+            segLen * 0.96,
+            tierH,
+            bookWallWidth,
+            matRight,
+            `${name} · Tomo Sud T${tier + 1}`,
+            { isBookBridge: true }
+          );
+        } else {
+          addBookBlock(
+            centerX - corridorGap / 2 - bookWallWidth / 2,
+            y,
+            centerZ + offsetAlong,
+            bookWallWidth,
+            tierH,
+            segLen * 0.96,
+            matLeft,
+            `${name} · Tomo Ovest T${tier + 1}`,
+            { isBookBridge: true }
+          );
+          addBookBlock(
+            centerX + corridorGap / 2 + bookWallWidth / 2,
+            y,
+            centerZ + offsetAlong,
+            bookWallWidth,
+            tierH,
+            segLen * 0.96,
+            matRight,
+            `${name} · Tomo Est T${tier + 1}`,
+            { isBookBridge: true }
+          );
+        }
+      }
+    }
+
+    // Overhead Stacked Book Skybridge Arch spanning across the center of the corridor (walkable above & hollow below!)
+    if (axis === 'x') {
+      addBookBlock(
+        centerX,
+        7.2,
+        centerZ,
+        42.0,
+        1.8,
+        corridorGap + bookWallWidth * 2,
+        manilaEnvelopeMat,
+        `${name} · Ponte Sospeso di Libri`,
+        { isBookBridge: true }
+      );
+      // Bounce-pad Post-it stairs at both entrances to leap onto the Book Skybridge!
+      addBookBlock(
+        centerX - length / 2 - 8,
+        0,
+        centerZ - corridorGap / 2 - 4,
+        7.5,
+        2.2,
+        7.5,
+        yellowPostItMat,
+        'Trampolino Post-It Ponte Libri',
+        { isBouncePad: true }
+      );
+      addBookBlock(
+        centerX + length / 2 + 8,
+        0,
+        centerZ + corridorGap / 2 + 4,
+        7.5,
+        2.2,
+        7.5,
+        pinkPostItMat,
+        'Trampolino Post-It Ponte Libri',
+        { isBouncePad: true }
+      );
+    } else {
+      addBookBlock(
+        centerX,
+        7.2,
+        centerZ,
+        corridorGap + bookWallWidth * 2,
+        1.8,
+        42.0,
+        manilaEnvelopeMat,
+        `${name} · Ponte Sospeso di Libri`,
+        { isBookBridge: true }
+      );
+      addBookBlock(
+        centerX - corridorGap / 2 - 4,
+        0,
+        centerZ - length / 2 - 8,
+        7.5,
+        2.2,
+        7.5,
+        yellowPostItMat,
+        'Trampolino Post-It Ponte Libri',
+        { isBouncePad: true }
+      );
+      addBookBlock(
+        centerX + corridorGap / 2 + 4,
+        0,
+        centerZ + length / 2 + 8,
+        7.5,
+        2.2,
+        7.5,
+        pinkPostItMat,
+        'Trampolino Post-It Ponte Libri',
+        { isBouncePad: true }
+      );
+    }
+  };
+
+  // Build the 4 Inter-Room Stacked Book Corridors & Skybridges!
+  buildStackedBookCorridor(
+    'Corridoio dei Dizionari (Studio ⇄ Bagno)',
+    0,
+    -92,
+    136,
+    'x'
+  );
+  buildStackedBookCorridor(
+    'Corridoio dei Ricettari (Cucina ⇄ Soggiorno)',
+    0,
+    92,
+    136,
+    'x'
+  );
+  buildStackedBookCorridor(
+    'Galleria degli Atlanti (Studio ⇄ Cucina)',
+    -92,
+    0,
+    136,
+    'z'
+  );
+  buildStackedBookCorridor(
+    'Galleria dei Romanzi (Bagno ⇄ Soggiorno)',
+    92,
+    0,
+    136,
+    'z'
+  );
+
+  // ============================================================================
+  // STANZA 1 (NORD-OVEST: x in [-375, 0], z in [-375, 0]): LO STUDIO MEGA-VASTO
   // ============================================================================
   // 1A. Foreground Screenshot Cluster (near spawn so Title Screen & initial spawn match the screenshot!)
   addBookBlock(-20, 0, -20, 12.0, 2.0, 9.0, blueCupMat, 'Dizionario Blu');
@@ -252,22 +688,31 @@ export function buildArenaMap(
   addPencilCupTower(-13.5, -24.5, 2.1, 4.8);
   addPencilCupTower(3.5, -14.5, 2.0, 4.5);
 
-  // 1B. Colossal Outer Studio Citadel (extending all the way to -135m!)
-  addBookBlock(-68, 0, -64, 28.0, 4.5, 22.0, blueCupMat, 'Enciclopedia Universale T1');
-  addBookBlock(-68, 4.5, -64, 25.0, 4.5, 19.5, redBookMat, 'Enciclopedia Universale T2');
-  addBookBlock(-68, 9.0, -64, 22.0, 4.2, 17.0, greenBookMat, 'Vetta dello Studio (Sniper Nest)');
+  // 1B. Mid-Sector & Deep Outer Studio Citadel (extending out to -340m!)
+  addBookBlock(-68, 0, -56, 28.0, 4.5, 22.0, blueCupMat, 'Enciclopedia Universale T1');
+  addBookBlock(-68, 4.5, -56, 25.0, 4.5, 19.5, redBookMat, 'Enciclopedia Universale T2');
+  addBookBlock(-68, 9.0, -56, 22.0, 4.2, 17.0, greenBookMat, 'Vetta dello Studio (Sniper Nest)');
 
-  // Staircase of Giant Post-its leading up to the Encyclopedia Fortress
-  addBookBlock(-44, 0, -52, 9.0, 2.5, 9.0, yellowPostItMat, 'Gradino Post-It 1', { isBouncePad: true });
-  addBookBlock(-53, 2.5, -58, 9.0, 3.0, 9.0, pinkPostItMat, 'Gradino Post-It 2', { isBouncePad: true });
+  addBookBlock(-44, 0, -48, 9.0, 2.5, 9.0, yellowPostItMat, 'Gradino Post-It 1', {
+    isBouncePad: true,
+  });
+  addBookBlock(-53, 2.5, -52, 9.0, 3.0, 9.0, pinkPostItMat, 'Gradino Post-It 2', {
+    isBouncePad: true,
+  });
 
-  // Colossal Manila Folder Canyon & Giant Spiral Notebook Ramp in Deep North-West (-115m)
-  addBookBlock(-108, 0, -96, 34.0, 14.0, 5.5, manilaEnvelopeMat, 'Archivio Buste Giganti');
-  addBookBlock(-95, 0, -45, 24.0, 3.5, 18.0, greenBookMat, 'Quaderno ad Anelli Colosso');
-  addBookBlock(-95, 3.5, -45, 21.0, 3.5, 15.5, yellowPostItMat, 'Blocco Appunti Superiore');
-  addBookBlock(-42, 0, -108, 26.0, 5.0, 18.0, redBookMat, 'Vocabolario Monumentale');
-  addPencilCupTower(-84, -82, 4.5, 11.5);
-  addPencilCupTower(-35, -82, 4.2, 10.5);
+  // Deep North-West Mega-Fortress (-140m to -320m)
+  addBookBlock(-145, 0, -135, 44.0, 6.0, 34.0, blueCupMat, 'Ziggurat Enciclopedica Base');
+  addBookBlock(-145, 6.0, -135, 36.0, 6.0, 28.0, redBookMat, 'Ziggurat Enciclopedica Media');
+  addBookBlock(-145, 12.0, -135, 28.0, 5.5, 22.0, greenBookMat, 'Ziggurat Enciclopedica Vetta');
+  addBookBlock(-115, 0, -135, 11.0, 3.2, 11.0, yellowPostItMat, 'Trampolino Ziggurat', {
+    isBouncePad: true,
+  });
+
+  addBookBlock(-245, 0, -155, 52.0, 18.0, 8.0, manilaEnvelopeMat, 'Grande Muraglia di Buste');
+  addBookBlock(-165, 0, -245, 48.0, 7.5, 32.0, greenBookMat, 'Quaderno ad Anelli Titanico');
+  addBookBlock(-265, 0, -265, 56.0, 9.0, 44.0, redBookMat, 'Archivio Storico Nord-Ovest');
+  addPencilCupTower(-195, -195, 6.2, 15.0);
+  addPencilCupTower(-110, -235, 5.5, 13.5);
 
   // Overturned Coffee Mug + Absorbable Coffee Puddle
   const mugGroup = new THREE.Group();
@@ -351,31 +796,31 @@ export function buildArenaMap(
   group.add(lampPivot);
 
   // ============================================================================
-  // STANZA 2 (NORD-EST: x in [0, 145], z in [-145, 0]): IL BAGNO OLIMPIONICO
+  // STANZA 2 (NORD-EST: x in [0, 375], z in [-375, 0]): IL BAGNO OLIMPIONICO VASTO
   // ============================================================================
-  // Olympic-Sized Bathtub (52m long x 26m wide!)
-  const bathtubBounds = { minX: 46, maxX: 74, minZ: -98, maxZ: -44 };
-  addBookBlock(60, 0, -71, 28.0, 3.8, 54.0, porcelainMat, 'Vasca da Bagno Olimpionica');
-  const bathWater = new THREE.Mesh(new THREE.PlaneGeometry(24.5, 50.0), waterMat);
+  // Olympic-Sized Bathtub (72m long x 34m wide!)
+  const bathtubBounds = { minX: 46, maxX: 82, minZ: -172, maxZ: -102 };
+  addBookBlock(64, 0, -137, 36.0, 4.0, 70.0, porcelainMat, 'Vasca da Bagno Olimpionica');
+  const bathWater = new THREE.Mesh(new THREE.PlaneGeometry(32.0, 65.0), waterMat);
   bathWater.rotation.x = -Math.PI / 2;
-  bathWater.position.set(60, 3.86, -71);
+  bathWater.position.set(64, 4.06, -137);
   group.add(bathWater);
 
   // 6 Giant Rubber Ducks floating inside the Olympic Bathtub
   const duckCoords: [number, number][] = [
-    [54, -90],
-    [66, -82],
-    [54, -74],
-    [66, -66],
-    [54, -58],
-    [66, -50],
+    [56, -160],
+    [72, -150],
+    [56, -140],
+    [72, -130],
+    [56, -120],
+    [72, -110],
   ];
   duckCoords.forEach(([dx, dz]) => {
     const duck = new THREE.Group();
-    duck.position.set(dx, 3.95, dz);
+    duck.position.set(dx, 4.15, dz);
     addOutlinedMesh(
       duck,
-      new THREE.SphereGeometry(2.2, 12, 10),
+      new THREE.SphereGeometry(2.4, 12, 10),
       yellowPostItMat,
       outlineMat,
       [0, 0.8, 0],
@@ -384,28 +829,29 @@ export function buildArenaMap(
     );
     addOutlinedMesh(
       duck,
-      new THREE.SphereGeometry(1.3, 10, 10),
+      new THREE.SphereGeometry(1.4, 10, 10),
       yellowPostItMat,
       outlineMat,
-      [0, 2.4, 1.35]
+      [0, 2.5, 1.4]
     );
     addOutlinedMesh(
       duck,
-      new THREE.ConeGeometry(0.55, 1.1, 8),
+      new THREE.ConeGeometry(0.6, 1.2, 8),
       new THREE.MeshStandardMaterial({ color: 0xf97316 }),
       outlineMat,
-      [0, 2.3, 2.6],
+      [0, 2.4, 2.7],
       [Math.PI / 2, 0, 0]
     );
     group.add(duck);
     rubberDucks.push(duck);
     registerTremblingProp(duck);
     colliders.push({
-      minX: dx - 2.6,
-      maxX: dx + 2.6,
-      minZ: dz - 2.8,
-      maxZ: dz + 2.8,
-      topY: 6.2,
+      minX: dx - 2.8,
+      maxX: dx + 2.8,
+      minZ: dz - 3.0,
+      maxZ: dz + 3.0,
+      bottomY: 0,
+      topY: 6.5,
       label: 'Paperella di Gomma Gigante (SQUEAK!)',
       isBouncePad: true,
       isDuck: true,
@@ -413,7 +859,7 @@ export function buildArenaMap(
   });
 
   // Colossal Interactive WC Throne in Il Bagno
-  const toiletBowlCenter = new THREE.Vector3(28, 0, -82);
+  const toiletBowlCenter = new THREE.Vector3(36, 0, -56);
   addBookBlock(
     toiletBowlCenter.x,
     0,
@@ -454,98 +900,108 @@ export function buildArenaMap(
   flushVortexMesh.visible = false;
   group.add(flushVortexMesh);
 
-  // Additional Bathroom Landmarks: Giant Sink Vanity, Stacked Towel Towers & Slippery Soap Bars
-  addBookBlock(98, 0, -68, 22.0, 7.5, 36.0, porcelainMat, 'Lavabo Monumentale');
-  addBookBlock(98, 7.5, -68, 16.0, 2.2, 26.0, blueCupMat, 'Specchiera Orizzontale');
-  addBookBlock(32, 0, -34, 14.0, 3.2, 14.0, pinkPostItMat, 'Pila Asciugamani Rosa', {
+  // Deep Bathroom Landmarks (out to +320m, -320m)
+  addBookBlock(135, 0, -135, 32.0, 8.5, 48.0, porcelainMat, 'Lavabo Monumentale Doppio');
+  addBookBlock(135, 8.5, -135, 22.0, 2.5, 36.0, blueCupMat, 'Specchiera Panoramica');
+  addBookBlock(225, 0, -215, 46.0, 6.0, 46.0, pinkPostItMat, 'Piramide di Asciugamani T1', {
     isBouncePad: true,
   });
-  addBookBlock(24, 0, -22, 6.2, 1.2, 4.0, pinkPostItMat, 'Saponetta Scivolosa 1 (SWISH!)', {
+  addBookBlock(225, 6.0, -215, 32.0, 5.5, 32.0, yellowPostItMat, 'Piramide di Asciugamani T2', {
+    isBouncePad: true,
+  });
+  addBookBlock(165, 0, -265, 54.0, 11.0, 26.0, porcelainMat, 'Acquedotto di Porcellana');
+  addBookBlock(28, 0, -28, 7.2, 1.3, 4.6, pinkPostItMat, 'Saponetta Scivolosa 1 (SWISH!)', {
     isSoap: true,
   });
-  addBookBlock(48, 0, -26, 6.2, 1.2, 4.0, yellowPostItMat, 'Saponetta Scivolosa 2 (SWISH!)', {
+  addBookBlock(64, 0, -42, 7.2, 1.3, 4.6, yellowPostItMat, 'Saponetta Scivolosa 2 (SWISH!)', {
     isSoap: true,
   });
 
   // ============================================================================
-  // STANZA 3 (SUD-OVEST: x in [-145, 0], z in [0, 145]): LA CUCINA GIGANTESCA
+  // STANZA 3 (SUD-OVEST: x in [-375, 0], z in [0, 375]): LA CUCINA GIGANTESCA
   // ============================================================================
   // Colossal Spring Toaster ("Il Tostapane Catapulta")
-  addBookBlock(-55, 0, 58, 15.0, 7.2, 10.5, steelMat, 'Tostapane Catapulta (Salta sopra!)', {
+  addBookBlock(-58, 0, 58, 16.0, 7.5, 11.5, steelMat, 'Tostapane Catapulta (Salta sopra!)', {
     isBouncePad: true,
     isToaster: true,
   });
   for (let s = 0; s < 2; s++) {
     const toast = addOutlinedMesh(
       group,
-      new THREE.BoxGeometry(5.2, 5.2, 0.9),
+      new THREE.BoxGeometry(5.5, 5.5, 0.95),
       woodMat,
       outlineMat,
-      [-55, 8.0, 56.2 + s * 3.4]
+      [-58, 8.2, 56.2 + s * 3.6]
     );
     toastSlices.push(toast);
   }
 
-  // Towering Kitchen Island, Steel Pots, Giant Cutting Board & Cereal Box Towers
-  addBookBlock(-32, 0, 36, 16.0, 5.5, 16.0, steelMat, 'Pentolone in Acciaio Inox');
-  addBookBlock(-78, 0, 32, 24.0, 2.2, 16.0, woodMat, 'Tagliere da Macellaio');
-  addBookBlock(-96, 0, 78, 28.0, 9.5, 42.0, woodMat, 'Isola Centrale della Cucina');
-  addBookBlock(-96, 9.5, 78, 20.0, 5.0, 24.0, yellowPostItMat, 'Scatola di Cereali Colosso');
-  addBookBlock(-45, 0, 98, 26.0, 6.5, 18.0, redBookMat, 'Vassoio Lasagne Gigante');
+  // Mid & Deep Kitchen Landmarks (out to -330m, +330m)
+  addBookBlock(-34, 0, 38, 18.0, 6.0, 18.0, steelMat, 'Pentolone in Acciaio Inox');
+  addBookBlock(-82, 0, 34, 26.0, 2.4, 18.0, woodMat, 'Tagliere da Macellaio');
+  addBookBlock(-135, 0, 135, 42.0, 10.5, 64.0, woodMat, 'Isola Centrale della Cucina');
+  addBookBlock(-135, 10.5, 135, 28.0, 6.5, 36.0, yellowPostItMat, 'Scatola di Cereali Colosso');
+  addBookBlock(-65, 0, 145, 32.0, 7.0, 22.0, redBookMat, 'Vassoio Lasagne Gigante');
+  addBookBlock(-235, 0, 225, 58.0, 14.0, 42.0, woodMat, 'Dispensa Colossale Sud-Ovest');
+  addBookBlock(-155, 0, 265, 46.0, 8.5, 34.0, steelMat, 'Frigorifero Orizzontale');
 
   // Collectible Cork Helmet ("Il Tappo di Sughero") in the Kitchen
   const corkHelmetPickup = addOutlinedMesh(
     group,
-    new THREE.CylinderGeometry(1.4, 1.1, 2.0, 14),
+    new THREE.CylinderGeometry(1.5, 1.2, 2.2, 14),
     woodMat,
     outlineMat,
-    [-38, 1.2, 52]
+    [-42, 1.3, 52]
   );
   registerTremblingProp(corkHelmetPickup);
 
   // ============================================================================
-  // STANZA 4 (SUD-EST: x in [0, 145], z in [0, 145]): IL SOGGIORNO STADIO
+  // STANZA 4 (SUD-EST: x in [0, 375], z in [0, 375]): IL SOGGIORNO STADIO
   // ============================================================================
   // Stadium-Sized Trampoline Couch ("Il Divano Elastico")
-  addBookBlock(68, 0, 72, 42.0, 5.5, 20.0, greenBookMat, 'Divano Trampolino Gigante (BOING!)', {
+  addBookBlock(78, 0, 135, 58.0, 6.0, 26.0, greenBookMat, 'Divano Trampolino Gigante (BOING!)', {
     isBouncePad: true,
   });
-  addBookBlock(68, 5.5, 80.5, 42.0, 7.5, 4.5, greenBookMat, 'Schienale Divano Stadio');
-  addBookBlock(45, 5.5, 72, 5.0, 4.2, 20.0, greenBookMat, 'Bracciolo Ovest', {
+  addBookBlock(78, 6.0, 146, 58.0, 8.5, 5.5, greenBookMat, 'Schienale Divano Stadio');
+  addBookBlock(46, 6.0, 135, 6.5, 4.8, 26.0, greenBookMat, 'Bracciolo Ovest', {
     isBouncePad: true,
   });
-  addBookBlock(91, 5.5, 72, 5.0, 4.2, 20.0, greenBookMat, 'Bracciolo Est', {
+  addBookBlock(110, 6.0, 135, 6.5, 4.8, 26.0, greenBookMat, 'Bracciolo Est', {
     isBouncePad: true,
   });
 
-  // Living Room Coffee Table, Bookshelf Citadel & Cushions
-  addBookBlock(68, 0, 42, 26.0, 3.8, 14.0, woodMat, 'Tavolino da Salotto');
-  addBookBlock(108, 0, 58, 18.0, 12.0, 38.0, redBookMat, 'Libreria del Soggiorno');
-  addBookBlock(32, 0, 88, 14.0, 2.6, 14.0, pinkPostItMat, 'Pouf Cuscino Morbido', {
+  // Mid & Deep Living Room Landmarks (out to +330m, +330m)
+  addBookBlock(78, 0, 58, 32.0, 4.2, 18.0, woodMat, 'Tavolino da Salotto');
+  addBookBlock(155, 0, 125, 24.0, 15.0, 52.0, redBookMat, 'Libreria del Soggiorno');
+  addBookBlock(36, 0, 135, 16.0, 3.0, 16.0, pinkPostItMat, 'Pouf Cuscino Morbido', {
     isBouncePad: true,
   });
+  addBookBlock(235, 0, 235, 64.0, 7.5, 32.0, greenBookMat, 'Anfiteatro Divano Angolare', {
+    isBouncePad: true,
+  });
+  addBookBlock(275, 0, 155, 36.0, 18.0, 48.0, blueCupMat, 'Torre Enciclopedica Sud-Est');
 
   // Spring Tape Measure ("Il Metro a Nastro a Molla")
-  addBookBlock(28, 0, 44, 6.2, 3.2, 6.2, yellowPostItMat, 'Metro a Nastro (ZIIIP!)', {
+  addBookBlock(32, 0, 48, 7.2, 3.6, 7.2, yellowPostItMat, 'Metro a Nastro (ZIIIP!)', {
     isBouncePad: true,
     isTapeTrap: true,
   });
 
   // Mouse Trap ("La Trappola per Topi")
-  addBookBlock(18, 0, 22, 7.2, 0.85, 4.6, woodMat, 'Trappola per Topi (CLACK!)', {
+  addBookBlock(22, 0, 26, 8.0, 0.95, 5.2, woodMat, 'Trappola per Topi (CLACK!)', {
     isBouncePad: true,
     isMouseTrap: true,
   });
 
   // Colossal Vacuum Cleaner ("L'Aspirapolvere")
-  const vacuumPosition = new THREE.Vector3(44, 0, 26);
+  const vacuumPosition = new THREE.Vector3(52, 0, 32);
   addBookBlock(
     vacuumPosition.x,
     0,
     vacuumPosition.z,
-    9.5,
-    5.4,
-    7.2,
+    11.0,
+    6.0,
+    8.4,
     redBookMat,
     'Aspirapolvere Turbo'
   );
@@ -553,36 +1009,44 @@ export function buildArenaMap(
   // Giant Rolling Glass Marble ("La Biglia")
   const rollingMarble = addOutlinedMesh(
     group,
-    new THREE.SphereGeometry(2.8, 18, 16),
+    new THREE.SphereGeometry(3.2, 18, 16),
     blueCupMat,
     outlineMat,
-    [34.0, 2.8, 54.0]
+    [42.0, 3.2, 68.0]
   );
-  const marbleVel = new THREE.Vector3(11.5, 0, -8.8);
+  const marbleVel = new THREE.Vector3(14.5, 0, -11.2);
 
-  // Spawn 16 Paper Ammo Pickups across the colossal 300m x 300m House
-  const paperGeo = new THREE.DodecahedronGeometry(0.85, 0);
+  // Spawn 24 Paper Ammo Pickups across the rooms, Book Corridors, and HVAC Ducts!
+  const paperGeo = new THREE.DodecahedronGeometry(0.95, 0);
   const paperMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
   const pickupCoords: [number, number][] = [
-    [-12, -16],
-    [-38, -32],
-    [-75, -48],
-    [-52, -88],
-    [24, -24],
-    [48, -36],
-    [82, -55],
-    [35, -95],
-    [-25, 28],
-    [-48, 48],
-    [-82, 62],
-    [-38, 88],
-    [25, 25],
-    [52, 38],
-    [84, 52],
-    [48, 95],
+    [-14, -18],
+    [-48, -42],
+    [-115, -75],
+    [-185, -145],
+    [0, -92], // Inside North Book Corridor
+    [0, -185], // Inside North HVAC Duct
+    [36, -36],
+    [82, -75],
+    [145, -115],
+    [185, 0], // Inside East HVAC Duct
+    [92, 0], // Inside East Book Corridor
+    [-35, 38],
+    [-75, 75],
+    [-145, 115],
+    [-185, 0], // Inside West HVAC Duct
+    [-92, 0], // Inside West Book Corridor
+    [0, 92], // Inside South Book Corridor
+    [0, 185], // Inside South HVAC Duct
+    [35, 35],
+    [72, 65],
+    [135, 95],
+    [195, 185],
+    [-215, 195],
+    [205, -195],
   ];
   pickupCoords.forEach(([px, pz]) => {
-    const pMesh = addOutlinedMesh(group, paperGeo, paperMat, outlineMat, [px, 0.9, pz]);
+    const pMesh = addOutlinedMesh(group, paperGeo, paperMat, outlineMat, [px, 1.0, pz]);
     registerTremblingProp(pMesh);
     paperPickups.push(pMesh);
   });
@@ -592,10 +1056,9 @@ export function buildArenaMap(
     const nodeGroup = new THREE.Group();
     nodeGroup.position.set(w.spawnPos[0], w.spawnPos[1], w.spawnPos[2]);
 
-    // Floating Sketch Crate / Pedestal
     addOutlinedMesh(
       nodeGroup,
-      new THREE.BoxGeometry(1.8, 1.1, 1.8),
+      new THREE.BoxGeometry(2.0, 1.2, 2.0),
       new THREE.MeshStandardMaterial({ color: w.accentColor, roughness: 0.4 }),
       outlineMat
     );
@@ -609,9 +1072,63 @@ export function buildArenaMap(
     });
   });
 
+  // ============================================================================
+  // ULTRA-PERFORMANT 2D SPATIAL HASH GRID FOR O(1) COLLIDER QUERIES
+  // ============================================================================
+  const GRID_MIN = -400;
+  const GRID_CELL_SIZE = 38;
+  const GRID_COLS = 22; // Covers -400m to +436m on both X and Z
+  const spatialBuckets: ColliderBox[][] = Array.from(
+    { length: GRID_COLS * GRID_COLS },
+    () => []
+  );
+
+  // Pre-index every collider into all overlapping 38m x 38m cells (with 1.5m player radius padding)
+  const pad = 1.5;
+  for (let i = 0; i < colliders.length; i++) {
+    const box = colliders[i];
+    const cMinX = Math.max(
+      0,
+      Math.min(GRID_COLS - 1, Math.floor((box.minX - pad - GRID_MIN) / GRID_CELL_SIZE))
+    );
+    const cMaxX = Math.max(
+      0,
+      Math.min(GRID_COLS - 1, Math.floor((box.maxX + pad - GRID_MIN) / GRID_CELL_SIZE))
+    );
+    const cMinZ = Math.max(
+      0,
+      Math.min(GRID_COLS - 1, Math.floor((box.minZ - pad - GRID_MIN) / GRID_CELL_SIZE))
+    );
+    const cMaxZ = Math.max(
+      0,
+      Math.min(GRID_COLS - 1, Math.floor((box.maxZ + pad - GRID_MIN) / GRID_CELL_SIZE))
+    );
+
+    for (let cx = cMinX; cx <= cMaxX; cx++) {
+      for (let cz = cMinZ; cz <= cMaxZ; cz++) {
+        spatialBuckets[cz * GRID_COLS + cx].push(box);
+      }
+    }
+  }
+
+  const queryNearbyColliders = (x: number, z: number): ColliderBox[] => {
+    const cx = Math.max(
+      0,
+      Math.min(GRID_COLS - 1, Math.floor((x - GRID_MIN) / GRID_CELL_SIZE))
+    );
+    const cz = Math.max(
+      0,
+      Math.min(GRID_COLS - 1, Math.floor((z - GRID_MIN) / GRID_CELL_SIZE))
+    );
+    return spatialBuckets[cz * GRID_COLS + cx];
+  };
+
   return {
     group,
     colliders,
+    queryNearbyColliders,
+    ventDuctZones,
+    ductFanPivots,
     tremblingProps,
     paperPickups,
     weaponPickups,

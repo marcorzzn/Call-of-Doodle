@@ -37,6 +37,7 @@ export interface ColliderBox {
   maxX: number;
   minZ: number;
   maxZ: number;
+  bottomY?: number;
   topY: number;
   label: string;
   isBouncePad?: boolean;
@@ -45,6 +46,8 @@ export interface ColliderBox {
   isTapeTrap?: boolean;
   isMouseTrap?: boolean;
   isSoap?: boolean;
+  isVentDuct?: boolean;
+  isBookBridge?: boolean;
 }
 
 export const boilingTimeUniform = { value: 0 };

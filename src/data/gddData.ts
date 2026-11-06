@@ -69,7 +69,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Fucile di precisione: tieni premuto Tasto Destro (o Z) per mirare ATTRAVERSO il fusto trasparente esagonale della penna e sparare il tubo d\'inchiostro legato a un elastico.',
     accentColor: '#2563eb',
     spawnRoom: 'scrivania',
-    spawnPos: [-68, 0.9, -62],
+    spawnPos: [-115, 0.9, -110],
   },
   {
     id: 'penna_scatto',
@@ -89,7 +89,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Ibrido tra fucile tattico e mitragliatrice leggera (l\'arma iconica impugnata nello screenshot!). Alta cadenza di fuoco e ricarica rapida con [R].',
     accentColor: '#3b82f6',
     spawnRoom: 'scrivania',
-    spawnPos: [-22, 0.9, -24],
+    spawnPos: [-32, 0.9, -36],
   },
   {
     id: 'spillatrice',
@@ -109,7 +109,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Spara grossi punti metallici a U: rimbalzano una volta sulle superfici dure, inchiodano i nemici per 1.5s e fanno saltare di dolore il Padrone di Casa ("YOWCH!").',
     accentColor: '#64748b',
     spawnRoom: 'scrivania',
-    spawnPos: [-45, 0.9, -18],
+    spawnPos: [-88, 0.9, -28],
   },
   {
     id: 'pennarello',
@@ -129,7 +129,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Bazooka pesante: lancia il tampone d\'inchiostro generando una grossa macchia nera indelebile sui muri e sui mobili (toglie tantissima Pazienza al Padrone di Casa!).',
     accentColor: '#1e293b',
     spawnRoom: 'scrivania',
-    spawnPos: [-85, 0.9, -35],
+    spawnPos: [-195, 0.9, -145],
   },
   {
     id: 'colla_caldo',
@@ -149,7 +149,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Spara globi caldi e filanti che rallentano e incollano i piedi degli avversari a terra (chi è incollato deve premere [SPAZIO] ripetutamente per liberarsi).',
     accentColor: '#f59e0b',
     spawnRoom: 'soggiorno',
-    spawnPos: [42, 0.9, 44],
+    spawnPos: [92, 0.9, 92],
   },
   {
     id: 'taglierino',
@@ -169,7 +169,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Come un fucile a pompa a corto raggio: espelle segmenti di lama affilati che mozzano a metà i nemici vicini e squarciano i cuscini del divano facendo volare piume!',
     accentColor: '#eab308',
     spawnRoom: 'scrivania',
-    spawnPos: [-16, 0.9, -48],
+    spawnPos: [-52, 0.9, -90],
   },
   {
     id: 'cucchiaio',
@@ -189,7 +189,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Arma da mischia sempre disponibile (anche a inizio modalità Scavenger). Veloce, affidabile, spinge indietro i nemici e lascia ammaccature sui muri.',
     accentColor: '#94a3b8',
     spawnRoom: 'cucina',
-    spawnPos: [-42, 0.9, 42],
+    spawnPos: [-65, 0.9, 65],
   },
   {
     id: 'mestolo',
@@ -209,7 +209,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Più lento del cucchiaio ma con un\'area di impatto ad arco vastissima: ideale per colpire gruppi di stickman o spingere la Biglia gigante.',
     accentColor: '#b45309',
     spawnRoom: 'cucina',
-    spawnPos: [-68, 0.9, 55],
+    spawnPos: [-135, 0.9, 110],
   },
   {
     id: 'righello',
@@ -229,7 +229,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Attacco in stoccata (affondo) rapidissimo e con allungo superiore: marchia ogni stickman colpito con un segno rosso di correzione.',
     accentColor: '#ef4444',
     spawnRoom: 'scrivania',
-    spawnPos: [-12, 0.9, -18],
+    spawnPos: [-18, 0.9, -24],
   },
   {
     id: 'forchetta',
@@ -249,7 +249,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Può essere lanciata come un giavellotto letale: dove atterra si conficca vibrando e devi passarci sopra (o premere [R]) per recuperarla!',
     accentColor: '#cbd5e1',
     spawnRoom: 'cucina',
-    spawnPos: [-32, 0.9, 68],
+    spawnPos: [-85, 0.9, 165],
   },
   {
     id: 'padella',
@@ -269,7 +269,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Mischia pesantissima. Mentre la impugni, la padella para e fa rimbalzare automaticamente il 70% dei proiettili frontali!',
     accentColor: '#334155',
     spawnRoom: 'cucina',
-    spawnPos: [-56, 0.9, 28],
+    spawnPos: [-155, 0.9, 68],
   },
   {
     id: 'spugna',
@@ -289,7 +289,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Usala vicino alla pozza di caffè rovesciata o all\'acqua per ASSORBIRE il liquido dal pavimento, oppure spremila contro un nemico!',
     accentColor: '#facc15',
     spawnRoom: 'bagno',
-    spawnPos: [36, 0.9, -48],
+    spawnPos: [68, 0.9, -85],
   },
   {
     id: 'gomma',
@@ -309,7 +309,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Rimbalza in modo imprevedibile fino a 5 volte sui mobili e cancella dalla realtà qualsiasi proiettile nemico incontri lungo la traiettoria.',
     accentColor: '#ec4899',
     spawnRoom: 'scrivania',
-    spawnPos: [-36, 0.9, -36],
+    spawnPos: [-72, 0.9, -62],
   },
   {
     id: 'molletta',
@@ -329,7 +329,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Lanciata a terra resta armata come trappola: appena uno stickman (o il Padrone di Casa) ci passa sopra, scatta con un forte "SNAP!".',
     accentColor: '#10b981',
     spawnRoom: 'bagno',
-    spawnPos: [58, 0.9, -22],
+    spawnPos: [135, 0.9, -55],
   },
   {
     id: 'lampadina',
@@ -349,7 +349,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Granata ibrida: esplode con un "POP!" accecando chi guarda e, se cade nella Vasca da Bagno o in una pozza d\'acqua, fulmina l\'intera area!',
     accentColor: '#fde047',
     spawnRoom: 'soggiorno',
-    spawnPos: [64, 0.9, 64],
+    spawnPos: [148, 0.9, 138],
   },
   {
     id: 'phon',
@@ -369,7 +369,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Spara un getto di vento che fa volare via i nemici. COMBO LETALE: se spari col Phon dentro la Vasca da Bagno in cui c\'è qualcuno, fulmini tutti ("BZZZ-BZZZ!") forzando il respawn!',
     accentColor: '#06b6d4',
     spawnRoom: 'bagno',
-    spawnPos: [22, 0.9, -26],
+    spawnPos: [48, 0.9, -45],
   },
   {
     id: 'laser_gatto',
@@ -389,7 +389,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Strumento chiave per "Cat-astrophe": punta il laser sui mobili per scatenare il Gatto! Dopo gli attacchi il Gatto fa le FUSA ("PURRRR!") facendo vibrare lo schermo e tremare tutti gli oggetti vicini; al 100% della Barra del Caos si acciambella e dorme con "Zzz" e zanzare attorno alla testa!',
     accentColor: '#ef4444',
     spawnRoom: 'soggiorno',
-    spawnPos: [20, 0.9, 20],
+    spawnPos: [42, 0.9, 42],
   },
 ];
 
@@ -407,56 +407,56 @@ export interface MapBlueprint {
 export const MAPS_BLUEPRINTS: MapBlueprint[] = [
   {
     id: 'scrivania',
-    name: 'Quadrante Nord-Ovest: Lo Studio / Scrivania',
-    subtitle: 'Foglio a quadretti master, pila di libri, tazza di caffè rovesciata, Ventilatore e Lampada oscillante',
+    name: 'Quadrante Nord-Ovest (380×380m): Lo Studio / Scrivania Colossale',
+    subtitle: 'Cittadella delle Enciclopedie, Corridoio dei Libri Impilati e Condotto di Ventilazione Nord/Ovest',
     playableInDemo: true,
-    scaleRatio: '1 Stickman = 4.5 cm reali',
+    scaleRatio: 'Mappa Totale 760×760m (577.600 m²)',
     themeColor: '#eab308',
     landmarks: [
       {
-        name: 'Bastione dei Libri Impilati & Post-It',
-        role: 'High-Ground & Copertura',
-        interaction: 'Funge da roccaforte per la Penna Blu Bic (Sniper); i Post-it offrono riparo accovacciandosi con [C].',
+        name: 'Corridoi & Ponti Sospesi di Libri Impilati',
+        role: 'Collegamento Tattico tra Stanze',
+        interaction: 'Tunnel fiancheggiati da enciclopedie e ponti sopraelevati (raggiungibili coi Post-it elastici) che collegano direttamente Studio, Bagno e Cucina.',
       },
       {
-        name: 'Tazza di Caffè Rovesciata (Assorbibile)',
-        role: 'Zona Scivolosa',
+        name: 'Condotti di Ventilazione in Lamiera (HVAC)',
+        role: 'Tunnel Rapido con Turbina d\'Aria',
+        interaction: 'Grandi condotti metallici ispezionabili con ventole rotanti che spingono gli stickman ad alta velocità da una stanza all\'altra.',
+      },
+      {
+        name: 'Tazza di Caffè Rovesciata & Ventilatore Gigante',
+        role: 'Zona Scivolosa & Corrente',
         interaction: 'Fa pattinare gli stickman ad alta velocità; può essere asciugata colpendola con la Spugna!',
-      },
-      {
-        name: 'Ventilatore da Tavolo con Pale',
-        role: 'Zona di Vento & Sballottamento',
-        interaction: 'Accendendolo crea una corrente continua che spinge gli stickman, devia i fogli e spazza le piume.',
       },
     ],
     hazardEvent: {
-      name: 'Oscillazione della Lampada da Tavolo',
-      trigger: 'Colpire il paralume metallico sospeso',
-      effect: 'La lampada dondola sopra la scrivania stordendo chi viene colpito in testa.',
+      name: 'Oscillazione della Lampada + Turbina Condotto HVAC',
+      trigger: 'Attraversare i condotti di ventilazione o i ponti di libri',
+      effect: 'Flusso d\'aria accelerato nei tunnel di lamiera per rotazioni rapide tra i 4 quadranti.',
     },
   },
   {
     id: 'bagno',
-    name: 'Quadrante Nord-Est: Il Bagno',
-    subtitle: 'Vasca con Paperelle di Gomma, Saponetta Hockey, Sciacquone del WC e Combo Elettrica Phon + Acqua',
+    name: 'Quadrante Nord-Est (380×380m): Il Bagno Olimpionico',
+    subtitle: 'Vasca Olimpionica, Acquedotto di Porcellana, Condotto di Ventilazione Est e Galleria dei Romanzi',
     playableInDemo: true,
-    scaleRatio: '1 Stickman = 4.5 cm reali',
+    scaleRatio: 'Mappa Totale 760×760m (577.600 m²)',
     themeColor: '#06b6d4',
     landmarks: [
       {
-        name: 'Vasca da Bagno & Paperelle di Gomma',
+        name: 'Vasca da Bagno Olimpionica & Paperelle Giganti',
         role: 'Navigazione & Elettrocuzione',
         interaction: 'Si naviga saltando sulle Paperelle ("SQUEAK!"). Se qualcuno usa il Phon o la Lampadina sulla vasca, tutti nell\'acqua fanno "BZZZ-BZZZ!" e respawnano!',
       },
       {
         name: 'Il Trono di Porcellana (WC con Sciacquone)',
         role: 'Vortice Gravitazionale',
-        interaction: 'Premendo [E] si apre la tavoletta e si tira lo sciacquone: risucchia tutti gli stickman nel raggio di 14m per una Mega-Combo!',
+        interaction: 'Premendo [E] si apre la tavoletta e si tira lo sciacquone: risucchia tutti gli stickman nel raggio di 24m per una Mega-Combo!',
       },
       {
-        name: 'La Saponetta Scivolosa',
-        role: 'Slitta & Trappola',
-        interaction: 'Calpestandola si scivola via dritti come un disco da hockey sbattendo contro i mobili.',
+        name: 'Condotto di Ventilazione Nord & Est',
+        role: 'Scorciatoia Coperta Studio ⇄ Bagno ⇄ Soggiorno',
+        interaction: 'Tunnel metallico con griglie a matita e spinta aerodinamica bidirezionale.',
       },
     ],
     hazardEvent: {
@@ -467,10 +467,10 @@ export const MAPS_BLUEPRINTS: MapBlueprint[] = [
   },
   {
     id: 'cucina',
-    name: 'Quadrante Sud-Ovest: La Cucina',
-    subtitle: 'Tostapane lancia-fette, Pentole in acciaio, Cavatappi d\'ancoraggio, Bottiglia frangibile e Tappo di Sughero',
+    name: 'Quadrante Sud-Ovest (380×380m): La Cucina Gigantesca',
+    subtitle: 'Tostapane Catapulta, Dispensa Colossale, Corridoio dei Ricettari e Condotto HVAC Sud',
     playableInDemo: true,
-    scaleRatio: '1 Stickman = 4.5 cm reali',
+    scaleRatio: 'Mappa Totale 760×760m (577.600 m²)',
     themeColor: '#f97316',
     landmarks: [
       {
@@ -479,50 +479,50 @@ export const MAPS_BLUEPRINTS: MapBlueprint[] = [
         interaction: 'Saltandoci sopra scatta con un "DING!" lanciando gli stickman in alto insieme a due fette di pane tostato impazzite!',
       },
       {
+        name: 'Corridoio dei Ricettari & Scatole di Cereali',
+        role: 'Passaggio Coperto & Ponte Cucina ⇄ Soggiorno',
+        interaction: 'Galleria fortificata fatta di enormi libri di cucina e scatole di cartone impilate che attraversa la parete divisoria Sud.',
+      },
+      {
         name: 'Il Tappo di Sughero (Elmo Cosmetico)',
         role: 'Equipaggiamento Speciale',
         interaction: 'Raccogliendolo in cucina lo indossi sulla testa dello stickman come un vero elmo da battaglia!',
       },
-      {
-        name: 'Pentole, Padella & Bottiglia d\'Acqua',
-        role: 'Bunker & Pozza Conduttiva',
-        interaction: 'La bottiglia se colpita fa "CRASH-SPLASH!" creando una pozza d\'acqua conduttiva.',
-      },
     ],
     hazardEvent: {
-      name: 'Eruzione del Tostapane',
-      trigger: 'Salire sulla fessura del tostapane in cucina',
-      effect: 'Catapulta verticale istantanea per raggiungere le mensole alte.',
+      name: 'Eruzione del Tostapane & Corrente del Condotto Sud',
+      trigger: 'Salire sulla fessura del tostapane o imboccare il Condotto HVAC Sud',
+      effect: 'Catapulta verticale istantanea per raggiungere i ponti di libri e le mensole alte.',
     },
   },
   {
     id: 'soggiorno',
-    name: 'Quadrante Sud-Est: Il Soggiorno',
-    subtitle: 'Divano Trampolino, Aspirapolvere risucchia-tutto, Metro a Nastro, Trappola per Topi e Biglia rotolante',
+    name: 'Quadrante Sud-Est (380×380m): Il Soggiorno Stadio',
+    subtitle: 'Divano Trampolino da 80m, Libreria Fortezza, Aspirapolvere Turbo, Biglia e Condotti Interconnessi',
     playableInDemo: true,
-    scaleRatio: '1 Stickman = 4.5 cm reali',
+    scaleRatio: 'Mappa Totale 760×760m (577.600 m²)',
     themeColor: '#10b981',
     landmarks: [
       {
-        name: 'Il Divano Elastico (Squash & Stretch)',
+        name: 'Il Divano Elastico Stadio (Squash & Stretch)',
         role: 'Super Trampolino',
         interaction: 'Saltando sui cuscini verdi si rimbalza altissimo ("BOING-BOING!"); tagliandoli col Taglierino volano piume bianche!',
       },
       {
-        name: 'L\'Aspirapolvere Accendibile',
-        role: 'Vortice d\'Aspirazione a 180°',
-        interaction: 'Aspira gli stickman verso il tubo ("VRRRRR-CLUNK!") intrappolandoli per 5 secondi nel serbatoio.',
+        name: 'Galleria dei Romanzi & Condotto HVAC Est/Sud',
+        role: 'Rete di Tunnel Inter-Stanza',
+        interaction: 'Collega il Soggiorno al Bagno e alla Cucina tramite tunnel di ventilazione in acciaio e ponti di volumi rilegati.',
       },
       {
-        name: 'Metro a Nastro, Trappola per Topi & Biglia',
+        name: 'Aspirapolvere, Metro a Nastro, Trappola & Biglia',
         role: 'Catene Fisiche Caotiche',
         interaction: 'Il Metro a Nastro e la Trappola per Topi ("CLACK!") lanciano in orbita chi ci passa sopra; la Biglia rotola travolgendo gli stickman.',
       },
     ],
     hazardEvent: {
-      name: 'Reazione a Catena del Soggiorno',
-      trigger: 'Attivare Ventilatore / Biglia / Puntatore Laser del Gatto',
-      effect: 'La biglia fa scattare il metro a nastro mentre il Gatto o l\'Aspirapolvere seminano il panico nella stanza.',
+      name: 'Reazione a Catena del Soggiorno + Fusa del Gatto',
+      trigger: 'Attivare Puntatore Laser del Gatto / Fusa [P] / Biglia',
+      effect: 'Le Fusa del Gatto fanno tremare tutti i mobili della stanza fino al Cat-Nap finale al 100% di Caos.',
     },
   },
 ];
@@ -566,14 +566,12 @@ void main() {
   gl_FragColor = vec4(pencilColor, 1.0);
 }`,
 
-  steppedAnimationCode: `// 3. SISTEMA DI MOVIMENTO AVANZATO (SHIFT SPRINT, C CROUCH, R RELOAD)
-// + BOSS FIGHTS "DOMESTIC CHAOS" (PADRONE) & "CAT-ASTROPHE" (GATTO)
-export function updateStickmanMovementAndBosses(dt: number) {
-  // Sprint (Shift): +55% speed, consuma Stamina verde, FOV 72 -> 78
-  // Crouch (C): abbassa altezza occhi 1.68m -> 0.95m per copertura dietro Post-it
-  // Reload (R): ricarica il caricatore con rotazione 3D del viewmodel
-  // Boss Padrone: spazza con la Scopa, perde Pazienza se sporchi coi Pennarelli
-  // Boss Gatto: insegue il Puntatore Laser rosso distruggendo libri e vasi!
+  steppedAnimationCode: `// 3. SPATIAL HASH GRID O(1) PER MAPPA MEGA-VASTA (760m x 760m)
+// + CONDOTTI DI VENTILAZIONE HVAC & CORRIDOI DI LIBRI IMPILATI
+export function querySpatialHashGrid(x: number, z: number) {
+  // La mappa 760x760m è suddivisa in celle da 38x38m pre-indicizzate:
+  // Ogni frame testa SOLO i 3-8 collider nella cella corrente del giocatore
+  // (costo CPU < 0.04ms anche su Intel Atom N455 + supporto tunnel 3D bottomY/topY).
 }`,
 };
 
@@ -610,12 +608,12 @@ export const SOLO_DEV_ROADMAP: RoadmapPhase[] = [
   {
     phase: 'FASE 3',
     duration: 'Settimane 8–12',
-    title: 'La Casa Interconnessa (4 Stanze) & Fisica Caotica a Catena',
+    title: 'Mega-Casa 760×760m, Condotti di Ventilazione, Corridoi di Libri & Spatial Hash Grid O(1)',
     deliverables: [
-      'Mappa continua con Studio/Scrivania, Bagno, Cucina e Soggiorno collegati da varchi.',
-      'Trappole e oggetti fisici leggeri: Ventilatore, Aspirapolvere, Tostapane catapulta, Metro a Nastro, Trappola per Topi, Saponetta, Biglia e combo Phon nella Vasca ("BZZZ-BZZZ!").',
+      'Espansione colossale delle 4 stanze (380×380m ciascuna) interconnesse da Condotti di Ventilazione in lamiera (con spinta d\'aria) e Corridoi/Ponti di Libri Impilati.',
+      'Partizionamento spaziale 2D Spatial Hash Grid (celle 38×38m) con supporto tunnel 3D (bottomY/topY) per collisioni O(1) ultra-performanti.',
     ],
-    optimizationMilestone: 'Collider primitivi AABB/Sferici puramente analitici (< 0.4ms CPU per frame).',
+    optimizationMilestone: 'Lookup Spatial Hash Grid O(1) (< 0.04ms CPU per frame con oltre 180 collider attivi).',
   },
   {
     phase: 'FASE 4',
