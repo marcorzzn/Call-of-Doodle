@@ -98,6 +98,7 @@ export default function App() {
 
   // Boss meters: Padrone Patience (starts at 100%, win at 0%) or Cat Chaos (starts at 0%, win at 100%)
   const [bossMeter, setBossMeter] = useState<number>(100);
+  const [catBehaviorState, setCatBehaviorState] = useState<'chasing' | 'purring' | 'napping'>('chasing');
 
   const [playerGluedCount, setPlayerGluedCount] = useState<number>(0);
   const [playerBlindTimer, setPlayerBlindTimer] = useState<number>(0);
@@ -107,7 +108,7 @@ export default function App() {
   const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
   const [gddOpen, setGddOpen] = useState<boolean>(false);
   const [killFeedMsg, setKillFeedMsg] = useState<string>(
-    'Casa Completa 3D pronta! Shift=Scatto · Spazio=Salto · C=Accovaccia · R=Ricarica'
+    'Mega-Casa 300x300m pronta! Shift=Scatto · Spazio=Salto · C=Accovaccia · R=Ricarica'
   );
 
   const stateRef = useRef({
@@ -125,6 +126,9 @@ export default function App() {
     score: 0,
     botScore: 0,
     bossMeter: 100,
+    catState: 'chasing' as 'chasing' | 'purring' | 'napping',
+    catPurrTimer: 0,
+    catPurrCooldown: 5.5,
     gluedMashesRemaining: 0,
     blindTimer: 0,
     hitstopTimer: 0,
@@ -134,7 +138,7 @@ export default function App() {
     flushVortexTimer: 0,
     ammo: { ...INITIAL_MAGAZINES } as Record<WeaponId, number>,
     teleportRoomRequested: null as HouseRoom | null,
-    laserTargetPoint: new THREE.Vector3(6, 0.2, 6),
+    laserTargetPoint: new THREE.Vector3(14, 0.35, 14),
     laserActive: false,
   });
 
@@ -188,14 +192,19 @@ export default function App() {
       );
     } else if (mode === 'gatto') {
       stateRef.current.bossMeter = 0;
+      stateRef.current.catState = 'chasing';
+      stateRef.current.catPurrTimer = 2.6;
+      stateRef.current.catPurrCooldown = 6.0;
       setBossMeter(0);
+      setCatBehaviorState('purring');
+      foleyAudio.playCatPurr();
       stateRef.current.weaponId = 'laser_gatto';
       setActiveWeaponId('laser_gatto');
       setKillFeedMsg(
-        'BOSS CO-OP: Il Gatto Disastro è in casa! Usa il Puntatore Laser [L] sui mobili per fargli distruggere tutto!'
+        'BOSS GATTO: Il Gatto fa le FUSA (tremolio stanza)! Usa il Laser [L] per riempire al 100% la Barra del Caos e farlo dormire!'
       );
     } else {
-      setKillFeedMsg('Modalità Arena Classica contro la squadra di Stickman Bot.');
+      setKillFeedMsg('Modalità Arena Classica nella Mega-Casa 300x300m contro gli Stickman Bot.');
     }
   };
 
@@ -249,23 +258,23 @@ export default function App() {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf4efe1);
-    scene.fog = new THREE.FogExp2(0xf4efe1, 0.011);
+    scene.fog = new THREE.FogExp2(0xf4efe1, 0.0022);
 
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
     pmremGenerator.dispose();
 
     const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0xd6d3d1, 0.98);
-    hemiLight.position.set(0, 28, 0);
+    hemiLight.position.set(0, 65, 0);
     scene.add(hemiLight);
 
     const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.32);
-    keyLight.position.set(18, 32, 16);
+    keyLight.position.set(38, 78, 36);
     keyLight.castShadow = !isSoftwareGl;
     keyLight.shadow.mapSize.set(1024, 1024);
     keyLight.shadow.camera.near = 2;
-    keyLight.shadow.camera.far = 80;
-    const d = 32;
+    keyLight.shadow.camera.far = 220;
+    const d = 95;
     keyLight.shadow.camera.left = -d;
     keyLight.shadow.camera.right = d;
     keyLight.shadow.camera.top = d;
@@ -278,7 +287,7 @@ export default function App() {
       72,
       (mountEl.clientWidth || window.innerWidth) / (mountEl.clientHeight || window.innerHeight),
       0.1,
-      160
+      650
     );
     camera.rotation.order = 'YXZ';
     scene.add(camera);
@@ -432,12 +441,12 @@ export default function App() {
       'Bianchetto_Kid',
     ];
     const botSpawns: [number, number][] = [
-      [-11, -13],
-      [-5, -9],
-      [11, -11],
-      [-12, 11],
-      [11, 11],
-      [-8, -4],
+      [-14, -15],
+      [-6, -10],
+      [34, -38],
+      [-38, 36],
+      [38, 38],
+      [-28, -28],
     ];
     const bots: StickmanActor[] = botSpawns.map(([sx, sz], idx) => {
       const actor = createStickmanActor(
@@ -515,15 +524,41 @@ export default function App() {
       }
     };
 
+    const triggerCatPurrBurst = (duration = 3.2) => {
+      if (stateRef.current.bossMode !== 'gatto' || stateRef.current.catState === 'napping') return;
+      stateRef.current.catState = 'purring';
+      stateRef.current.catPurrTimer = duration;
+      setCatBehaviorState('purring');
+      foleyAudio.playCatPurr();
+      triggerComicPop('PURRRRR! (FUSA SISMICHE)');
+    };
+
     const addCatChaos = (amount: number, reason: string) => {
       if (stateRef.current.bossMode !== 'gatto') return;
+      if (stateRef.current.catState === 'napping') {
+        triggerComicPop('Zzz... IL GATTO DORME!');
+        return;
+      }
       stateRef.current.bossMeter = Math.min(100, stateRef.current.bossMeter + amount);
       setBossMeter(Math.round(stateRef.current.bossMeter));
       foleyAudio.playCatMeow();
-      setKillFeedMsg(`CAT-ASTROPHE: ${reason} (+${amount}% Barra del Caos!)`);
+
       if (stateRef.current.bossMeter >= 100) {
-        setGamePhase('victory');
-        if (document.pointerLockElement) document.exitPointerLock?.();
+        // BARRA DEL CAOS FULL -> Transition Gatto into 3D Cat-Nap animation!
+        stateRef.current.catState = 'napping';
+        stateRef.current.catPurrTimer = 0;
+        setCatBehaviorState('napping');
+        foleyAudio.playCatSleepYawn();
+        triggerComicPop('MIAO-YAWN... Zzz!');
+        setKillFeedMsg(
+          'BARRA DEL CAOS AL 100%! Il Gatto Gigante si è acciambellato per schiacciare un pisolino (Cat-Nap)!'
+        );
+      } else {
+        // Trigger Purring ('fusa') vibration after chaos hit!
+        triggerCatPurrBurst(3.2);
+        setKillFeedMsg(
+          `CAT-ASTROPHE: ${reason} (+${amount}% Caos · Le FUSA fanno tremare la stanza!)`
+        );
       }
     };
 
@@ -560,12 +595,12 @@ export default function App() {
         stateRef.current.laserActive = true;
         stateRef.current.laserTargetPoint
           .copy(player.pos)
-          .addScaledVector(_forward, 14)
-          .setY(0.35);
+          .addScaledVector(_forward, 24)
+          .setY(0.45);
         laserDotMesh.position.copy(stateRef.current.laserTargetPoint);
         laserDotMesh.visible = true;
         if (stateRef.current.bossMode === 'gatto') {
-          addCatChaos(14, 'Il Gatto ha inseguito il Puntatore Laser travolgendo i mobili!');
+          addCatChaos(20, 'Il Gatto ha inseguito il Puntatore Laser travolgendo i mobili!');
         }
         return;
       }
@@ -737,13 +772,13 @@ export default function App() {
 
     const respawnBot = (bot: StickmanActor) => {
       const roomOffsets: [number, number][] = [
-        [-12, -12],
-        [12, -12],
-        [-12, 12],
-        [12, 12],
+        [-32, -32],
+        [34, -34],
+        [-36, 36],
+        [36, 36],
       ];
       const [rx, rz] = roomOffsets[bot.id % roomOffsets.length];
-      bot.position.set(rx + (Math.random() - 0.5) * 6, 0, rz + (Math.random() - 0.5) * 6);
+      bot.position.set(rx + (Math.random() - 0.5) * 16, 0, rz + (Math.random() - 0.5) * 16);
       bot.velocity.set(0, 0, 0);
       bot.hp = bot.maxHp;
       bot.state = 'alive';
@@ -850,6 +885,11 @@ export default function App() {
       if (code === 'KeyE') {
         triggerToiletFlushCombo();
       }
+
+      // P key: Trigger Gatto's "Fusa" Purr Vibration on demand!
+      if (code === 'KeyP' && stateRef.current.bossMode === 'gatto') {
+        triggerCatPurrBurst(3.5);
+      }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
@@ -950,14 +990,14 @@ export default function App() {
 
       boilingTimeUniform.value = elapsed;
 
-      // Room Teleport Request
+      // Room Teleport Request across the Colossal 300m x 300m 4-Room House
       if (stateRef.current.teleportRoomRequested) {
         const targetRoom = stateRef.current.teleportRoomRequested;
         stateRef.current.teleportRoomRequested = null;
-        if (targetRoom === 'scrivania') player.pos.set(-5, 0, -3);
-        else if (targetRoom === 'bagno') player.pos.set(7, 0, -9);
-        else if (targetRoom === 'cucina') player.pos.set(-9, 0, 12);
-        else if (targetRoom === 'soggiorno') player.pos.set(8, 0, 9);
+        if (targetRoom === 'scrivania') player.pos.set(-6, 0, -4);
+        else if (targetRoom === 'bagno') player.pos.set(34, 0, -44);
+        else if (targetRoom === 'cucina') player.pos.set(-42, 0, 44);
+        else if (targetRoom === 'soggiorno') player.pos.set(38, 0, 38);
         player.vel.set(0, 0, 0);
       }
 
@@ -1071,12 +1111,12 @@ export default function App() {
         }
 
         const baseSpeed = stateRef.current.crouching
-          ? 6.2
+          ? 8.5
           : wantsSprint
-          ? 16.2
+          ? 24.5
           : player.slipperyTimer > 0
-          ? 16.5
-          : 10.5;
+          ? 24.0
+          : 15.0;
         const damping = player.slipperyTimer > 0 ? 1.8 : 11.0;
 
         player.vel.x = THREE.MathUtils.damp(player.vel.x, _moveVec.x * baseSpeed, damping, dt);
@@ -1084,8 +1124,8 @@ export default function App() {
         player.vel.y -= 26.0 * dt;
 
         player.pos.addScaledVector(player.vel, dt);
-        player.pos.x = THREE.MathUtils.clamp(player.pos.x, -28.5, 28.5);
-        player.pos.z = THREE.MathUtils.clamp(player.pos.z, -28.5, 28.5);
+        player.pos.x = THREE.MathUtils.clamp(player.pos.x, -142, 142);
+        player.pos.z = THREE.MathUtils.clamp(player.pos.z, -142, 142);
 
         // Update current room indicator based on quadrant
         const newRoom: HouseRoom =
@@ -1219,7 +1259,7 @@ export default function App() {
           }
         }
 
-        // Camera & Per-Weapon Viewmodel Attack Animations
+        // Camera & Per-Weapon Viewmodel Attack Animations + Gatto 'Fusa' Purr Screen Vibration!
         stateRef.current.shakeIntensity = THREE.MathUtils.damp(
           stateRef.current.shakeIntensity,
           0,
@@ -1228,10 +1268,25 @@ export default function App() {
         );
         stateRef.current.attackAnimTimer = Math.max(0, stateRef.current.attackAnimTimer - dt);
 
+        // Calculate harmonic purr rumble if Boss Gatto is purring ('fusa')
+        let purrRumbleX = 0;
+        let purrRumbleY = 0;
+        if (
+          stateRef.current.bossMode === 'gatto' &&
+          stateRef.current.catState === 'purring'
+        ) {
+          const distToCat = player.pos.distanceTo(gattoBoss.group.position);
+          const proxFactor = THREE.MathUtils.clamp(1.0 - distToCat / 110, 0.28, 1.0);
+          purrRumbleX = Math.sin(elapsed * 150) * 0.14 * proxFactor;
+          purrRumbleY = Math.cos(elapsed * 175) * 0.11 * proxFactor;
+        }
+
         const steppedWalk = Math.floor(player.walkCycle * 12) / 12;
         const bobY = player.grounded ? Math.abs(Math.sin(steppedWalk)) * 0.065 : 0;
-        const shakeX = (Math.random() - 0.5) * stateRef.current.shakeIntensity;
-        const shakeY = (Math.random() - 0.5) * stateRef.current.shakeIntensity;
+        const shakeX =
+          (Math.random() - 0.5) * stateRef.current.shakeIntensity + purrRumbleX;
+        const shakeY =
+          (Math.random() - 0.5) * stateRef.current.shakeIntensity + purrRumbleY;
 
         camera.up.set(0, 1, 0);
         camera.position.set(
@@ -1275,49 +1330,196 @@ export default function App() {
       currentArena.fanBladesPivot.rotation.x += dt * 18;
       currentArena.lampPivot.rotation.z = Math.sin(elapsed * 2.2) * 0.24;
       currentArena.toastSlices.forEach((toast, idx) => {
-        toast.position.y = 3.1 + Math.abs(Math.sin(elapsed * 3.2 + idx)) * 2.4;
+        toast.position.y = 8.0 + Math.abs(Math.sin(elapsed * 3.2 + idx)) * 5.2;
       });
 
-      // Rolling Marble in Living Room
+      // Rolling Marble in Colossal Living Room
       currentArena.rollingMarble.position.addScaledVector(currentArena.marbleVel, dt);
       currentArena.rollingMarble.rotation.x += dt * 5;
-      if (currentArena.rollingMarble.position.x > 25 || currentArena.rollingMarble.position.x < 3) {
+      if (
+        currentArena.rollingMarble.position.x > 125 ||
+        currentArena.rollingMarble.position.x < 10
+      ) {
         currentArena.marbleVel.x *= -1;
       }
-      if (currentArena.rollingMarble.position.z > 25 || currentArena.rollingMarble.position.z < 3) {
+      if (
+        currentArena.rollingMarble.position.z > 125 ||
+        currentArena.rollingMarble.position.z < 10
+      ) {
         currentArena.marbleVel.z *= -1;
       }
 
       currentArena.rubberDucks.forEach((duck, idx) => {
-        duck.position.y = 1.52 + Math.sin(elapsed * 2.5 + idx) * 0.12;
+        duck.position.y = 3.95 + Math.sin(elapsed * 2.5 + idx) * 0.22;
       });
 
       // Animate Boss 1: Il Padrone di Casa ("Domestic Chaos")
       padroneBoss.group.visible = stateRef.current.bossMode === 'padrone';
       if (padroneBoss.group.visible) {
         _toTarget.subVectors(player.pos, padroneBoss.group.position).setY(0);
-        if (_toTarget.length() > 2.5) {
+        if (_toTarget.length() > 4.5) {
           _toTarget.normalize();
-          padroneBoss.group.position.addScaledVector(_toTarget, 3.6 * dt);
+          padroneBoss.group.position.addScaledVector(_toTarget, 6.2 * dt);
           padroneBoss.group.rotation.y = Math.atan2(_toTarget.x, _toTarget.z);
         }
         padroneBoss.broomPivot.rotation.y = Math.sin(elapsed * 5.5) * 0.85;
       }
 
-      // Animate Boss 2: Il Gatto Disastro ("Cat-astrophe")
+      // Animate Boss 2: Il Gatto Disastro ("Cat-astrophe" + "Le Fusa" + "Cat-Nap")
       gattoBoss.group.visible = stateRef.current.bossMode === 'gatto';
       if (gattoBoss.group.visible) {
-        const catTarget = stateRef.current.laserActive
-          ? stateRef.current.laserTargetPoint
-          : player.pos;
-        _toTarget.subVectors(catTarget, gattoBoss.group.position).setY(0);
-        if (_toTarget.length() > 1.8) {
-          _toTarget.normalize();
-          gattoBoss.group.position.addScaledVector(_toTarget, 6.8 * dt);
-          gattoBoss.group.rotation.y = Math.atan2(_toTarget.x, _toTarget.z);
+        if (stateRef.current.catState === 'napping') {
+          // CAT-NAP ANIMATION (Barra del Caos = 100%):
+          // Curl body onto its side, close eyes, breathe gently, float Zzz & orbit mosquitoes!
+          gattoBoss.openEyesGroup.visible = false;
+          gattoBoss.closedEyesGroup.visible = true;
+          gattoBoss.purrWaveRing.visible = false;
+          gattoBoss.sleepZzzGroup.visible = true;
+
+          gattoBoss.bodyGroup.rotation.z = THREE.MathUtils.damp(
+            gattoBoss.bodyGroup.rotation.z,
+            1.22,
+            5,
+            dt
+          );
+          gattoBoss.bodyGroup.position.y = THREE.MathUtils.damp(
+            gattoBoss.bodyGroup.position.y,
+            -0.42,
+            5,
+            dt
+          );
+          // Gentle sleeping chest respiration
+          const breath = 1.0 + Math.sin(elapsed * 2.4) * 0.045;
+          gattoBoss.bodyGroup.scale.set(1.0, breath, 1.0);
+
+          gattoBoss.headGroup.rotation.z = THREE.MathUtils.damp(
+            gattoBoss.headGroup.rotation.z,
+            0.35,
+            5,
+            dt
+          );
+          gattoBoss.headGroup.rotation.x = THREE.MathUtils.damp(
+            gattoBoss.headGroup.rotation.x,
+            0.25,
+            5,
+            dt
+          );
+          gattoBoss.tailPivot.rotation.z = Math.sin(elapsed * 1.6) * 0.15;
+          gattoBoss.pawPivot.rotation.x = 0.4;
+
+          // Animate floating Zzz letters & buzzing mosquitoes above the sleeping Cat's head
+          gattoBoss.sleepZzzGroup.children.forEach((child, cIdx) => {
+            if (cIdx < 3) {
+              // Floating 'Z' meshes rising and bobbing
+              const phase = (elapsed * 0.85 + cIdx * 0.33) % 1.0;
+              child.position.y = phase * 2.2;
+              child.position.x = Math.sin(elapsed * 2.5 + cIdx) * 0.35;
+              child.scale.setScalar(0.65 + phase * 0.55);
+            } else {
+              // Pencil-drawn buzzing mosquitoes orbiting above the sleeping Cat
+              const mosqAngle = elapsed * (5.5 + cIdx) + cIdx * Math.PI;
+              child.position.set(
+                Math.cos(mosqAngle) * 1.15,
+                1.05 + Math.sin(elapsed * 14 + cIdx) * 0.22,
+                Math.sin(mosqAngle) * 1.15
+              );
+              child.rotation.y = -mosqAngle;
+            }
+          });
+        } else {
+          // AWAKE STATES: 'chasing' or 'purring' ('Le Fusa')
+          gattoBoss.openEyesGroup.visible = true;
+          gattoBoss.closedEyesGroup.visible = false;
+          gattoBoss.sleepZzzGroup.visible = false;
+
+          gattoBoss.bodyGroup.rotation.z = THREE.MathUtils.damp(
+            gattoBoss.bodyGroup.rotation.z,
+            0,
+            6,
+            dt
+          );
+          gattoBoss.bodyGroup.position.y = THREE.MathUtils.damp(
+            gattoBoss.bodyGroup.position.y,
+            0,
+            6,
+            dt
+          );
+          gattoBoss.headGroup.rotation.z = THREE.MathUtils.damp(
+            gattoBoss.headGroup.rotation.z,
+            0,
+            6,
+            dt
+          );
+          gattoBoss.headGroup.rotation.x = THREE.MathUtils.damp(
+            gattoBoss.headGroup.rotation.x,
+            0,
+            6,
+            dt
+          );
+
+          // Manage 'purring' ('fusa') timer & periodic automatic purr bursts
+          if (stateRef.current.catState === 'purring') {
+            stateRef.current.catPurrTimer -= dt;
+            gattoBoss.purrWaveRing.visible = true;
+            const ringScale = 1.0 + ((elapsed * 2.4) % 1.0) * 3.2;
+            gattoBoss.purrWaveRing.scale.setScalar(ringScale);
+            // High-frequency purr body shiver
+            gattoBoss.bodyGroup.scale.set(
+              1.0 + Math.sin(elapsed * 55) * 0.035,
+              1.0 + Math.cos(elapsed * 55) * 0.035,
+              1.0
+            );
+            if (stateRef.current.catPurrTimer <= 0) {
+              stateRef.current.catState = 'chasing';
+              setCatBehaviorState('chasing');
+              gattoBoss.purrWaveRing.visible = false;
+              gattoBoss.bodyGroup.scale.set(1, 1, 1);
+            }
+          } else {
+            gattoBoss.purrWaveRing.visible = false;
+            gattoBoss.bodyGroup.scale.set(1, 1, 1);
+            stateRef.current.catPurrCooldown -= dt;
+            if (stateRef.current.catPurrCooldown <= 0) {
+              stateRef.current.catPurrCooldown = 8.5;
+              triggerCatPurrBurst(3.0);
+            }
+          }
+
+          const catTarget = stateRef.current.laserActive
+            ? stateRef.current.laserTargetPoint
+            : player.pos;
+          _toTarget.subVectors(catTarget, gattoBoss.group.position).setY(0);
+          if (_toTarget.length() > 3.2) {
+            _toTarget.normalize();
+            const chaseSpeed = stateRef.current.catState === 'purring' ? 9.5 : 12.8;
+            gattoBoss.group.position.addScaledVector(_toTarget, chaseSpeed * dt);
+            gattoBoss.group.rotation.y = Math.atan2(_toTarget.x, _toTarget.z);
+          }
+          gattoBoss.tailPivot.rotation.z = Math.sin(elapsed * 8) * 0.55;
+          gattoBoss.pawPivot.rotation.x = Math.sin(elapsed * 10) * 0.65;
         }
-        gattoBoss.tailPivot.rotation.z = Math.sin(elapsed * 8) * 0.55;
-        gattoBoss.pawPivot.rotation.x = Math.sin(elapsed * 10) * 0.65;
+      }
+
+      // Tremble & chatter nearby objects in the room when the Gatto is doing 'Le Fusa' ('purring')!
+      const isCatPurringNow =
+        stateRef.current.bossMode === 'gatto' && stateRef.current.catState === 'purring';
+      for (let tIdx = 0; tIdx < currentArena.tremblingProps.length; tIdx++) {
+        const prop = currentArena.tremblingProps[tIdx];
+        const baseY = prop.userData.baseY ?? prop.position.y;
+        const baseRotZ = prop.userData.baseRotZ ?? 0;
+        if (isCatPurringNow) {
+          const distToCat = prop.position.distanceTo(gattoBoss.group.position);
+          if (distToCat < 88) {
+            const factor = (1.0 - distToCat / 88) * 1.15;
+            prop.position.y =
+              baseY + Math.abs(Math.sin(elapsed * 42 + tIdx * 1.3)) * 0.32 * factor;
+            prop.rotation.z =
+              baseRotZ + Math.sin(elapsed * 48 + tIdx * 1.7) * 0.048 * factor;
+            continue;
+          }
+        }
+        prop.position.y = THREE.MathUtils.damp(prop.position.y, baseY, 10, dt);
+        prop.rotation.z = THREE.MathUtils.damp(prop.rotation.z, baseRotZ, 10, dt);
       }
 
       // Toilet Flush Vortex Combo in Il Bagno
@@ -1548,8 +1750,8 @@ export default function App() {
           );
 
           bot.position.addScaledVector(bot.velocity, dt);
-          bot.position.x = THREE.MathUtils.clamp(bot.position.x, -26, 26);
-          bot.position.z = THREE.MathUtils.clamp(bot.position.z, -26, 26);
+          bot.position.x = THREE.MathUtils.clamp(bot.position.x, -136, 136);
+          bot.position.z = THREE.MathUtils.clamp(bot.position.z, -136, 136);
           bot.group.rotation.y = bot.rotationY;
 
           const swing =
@@ -1761,11 +1963,11 @@ export default function App() {
           </div>
 
           {bossMode !== 'none' && (
-            <div className="sketch-box-sm px-3 py-1 bg-amber-100 flex items-center gap-2">
+            <div className="sketch-box-sm px-3 py-1 bg-amber-100 flex flex-wrap items-center gap-2">
               <span className="text-xs font-hand font-bold text-zinc-950">
                 {bossMode === 'padrone'
                   ? `Pazienza Padrone: ${bossMeter}%`
-                  : `Caos Gatto (Gomitolo): ${bossMeter}%`}
+                  : `Barra del Caos Gatto: ${bossMeter}%`}
               </span>
               <div className="w-28 h-3 border border-zinc-900 bg-white overflow-hidden">
                 <div
@@ -1775,6 +1977,26 @@ export default function App() {
                   style={{ width: `${bossMeter}%` }}
                 />
               </div>
+              {bossMode === 'gatto' && (
+                <span className="px-2 py-0.5 text-[11px] font-hand font-bold rounded border border-zinc-900 bg-white text-zinc-950">
+                  {catBehaviorState === 'napping'
+                    ? 'PISOLINO (Zzz!)'
+                    : catBehaviorState === 'purring'
+                    ? 'FUSA SISMICHE! (Premi P)'
+                    : 'CACCIA LASER (Premi P per Fusa)'}
+                </span>
+              )}
+              {bossMode === 'gatto' && catBehaviorState === 'napping' && (
+                <button
+                  onClick={() => {
+                    setGamePhase('victory');
+                    if (document.pointerLockElement) document.exitPointerLock?.();
+                  }}
+                  className="px-2 py-0.5 text-[11px] font-hand font-bold bg-emerald-300 hover:bg-emerald-400 text-zinc-950 border border-zinc-900 rounded cursor-pointer"
+                >
+                  Vittoria! Concludi Match
+                </button>
+              )}
             </div>
           )}
         </div>

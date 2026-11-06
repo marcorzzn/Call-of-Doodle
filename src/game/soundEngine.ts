@@ -293,6 +293,54 @@ class FoleySoundEngine {
     osc.stop(now + 0.4);
   }
 
+  public playCatPurr(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Deep rhythmic 28Hz feline purr ("PRRRRRRR...") with AM modulation
+    const carrier = ctx.createOscillator();
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    const masterGain = ctx.createGain();
+
+    carrier.type = 'sawtooth';
+    carrier.frequency.setValueAtTime(34, now);
+    carrier.frequency.linearRampToValueAtTime(42, now + 0.6);
+    carrier.frequency.linearRampToValueAtTime(32, now + 1.2);
+
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(22, now);
+    lfoGain.gain.setValueAtTime(0.16, now);
+
+    masterGain.gain.setValueAtTime(0.24, now);
+    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 1.25);
+
+    lfo.connect(lfoGain).connect(masterGain.gain);
+    carrier.connect(masterGain).connect(ctx.destination);
+
+    carrier.start(now);
+    lfo.start(now);
+    carrier.stop(now + 1.25);
+    lfo.stop(now + 1.25);
+  }
+
+  public playCatSleepYawn(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Sleepy descending yawn sigh
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(640, now);
+    osc.frequency.exponentialRampToValueAtTime(210, now + 0.9);
+    gain.gain.setValueAtTime(0.28, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.95);
+  }
+
   public playBoing(bounceIndex = 0): void {
     const ctx = this.ensureContext();
     if (!ctx) return;

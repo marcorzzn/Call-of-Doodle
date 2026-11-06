@@ -961,63 +961,99 @@ export function createPadroneBoss(outlineMat: THREE.Material): {
     [0, -3.9, 1.6]
   );
   group.add(broomPivot);
+  group.scale.setScalar(2.4);
 
   return { group, broomPivot };
 }
 
 /**
- * Giant Sketch Cat Boss ("Il Gatto Disastro") for Cat-astrophe Mode
+ * Giant Sketch Cat Boss ("Il Gatto Disastro") with:
+ * - Purr Vibration Ring ("Le Fusa" ripple wave)
+ * - Curling Sleep Body Group & Head Group (for Cat-Nap animation when Barra del Caos = 100%)
+ * - Open Glowing Eyes vs Closed Sleeping Eyelids
+ * - Floating "Zzz" & Pencil-Drawn Buzzing Mosquitoes ("Zanzare a matita") when napping!
  */
 export function createGattoBoss(outlineMat: THREE.Material): {
   group: THREE.Group;
+  bodyGroup: THREE.Group;
+  headGroup: THREE.Group;
   tailPivot: THREE.Group;
   pawPivot: THREE.Group;
+  openEyesGroup: THREE.Group;
+  closedEyesGroup: THREE.Group;
+  purrWaveRing: THREE.Mesh;
+  sleepZzzGroup: THREE.Group;
 } {
   const group = new THREE.Group();
+  const bodyGroup = new THREE.Group();
+  group.add(bodyGroup);
+
   const catFurMat = new THREE.MeshStandardMaterial({ color: 0x1e1b18, roughness: 0.65 });
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+  const eyelidMat = new THREE.MeshBasicMaterial({ color: 0xfaf8f2 });
 
   // Torso
   addOutlinedMesh(
-    group,
+    bodyGroup,
     new THREE.SphereGeometry(1.6, 14, 12),
     catFurMat,
     outlineMat,
     [0, 1.5, 0],
     [0, 0, 0],
-    [1.1, 0.85, 1.65]
+    [1.15, 0.85, 1.65]
   );
-  // Head
-  addOutlinedMesh(group, new THREE.SphereGeometry(1.25, 14, 12), catFurMat, outlineMat, [0, 2.6, 1.8]);
+
+  // Head Group (tilts & tucks into paws when napping)
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 2.6, 1.8);
+  bodyGroup.add(headGroup);
+
+  addOutlinedMesh(headGroup, new THREE.SphereGeometry(1.25, 14, 12), catFurMat, outlineMat, [0, 0, 0]);
   // Pointed Cat Ears
   addOutlinedMesh(
-    group,
+    headGroup,
     new THREE.ConeGeometry(0.45, 0.95, 6),
     catFurMat,
     outlineMat,
-    [-0.65, 3.7, 1.8],
+    [-0.65, 1.1, 0],
     [0, 0, 0.25]
   );
   addOutlinedMesh(
-    group,
+    headGroup,
     new THREE.ConeGeometry(0.45, 0.95, 6),
     catFurMat,
     outlineMat,
-    [0.65, 3.7, 1.8],
+    [0.65, 1.1, 0],
     [0, 0, -0.25]
   );
-  // Glowing Yellow Doodle Eyes
+
+  // Open Glowing Yellow Doodle Eyes
+  const openEyesGroup = new THREE.Group();
   const lEye = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), eyeMat);
-  lEye.position.set(-0.45, 2.75, 2.9);
+  lEye.position.set(-0.45, 0.15, 1.1);
   const rEye = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), eyeMat);
-  rEye.position.set(0.45, 2.75, 2.9);
-  group.add(lEye, rEye);
+  rEye.position.set(0.45, 0.15, 1.1);
+  openEyesGroup.add(lEye, rEye);
+  headGroup.add(openEyesGroup);
+
+  // Closed Sleeping Eyelids (visible during Cat-Nap!)
+  const closedEyesGroup = new THREE.Group();
+  closedEyesGroup.visible = false;
+  const lidGeo = new THREE.BoxGeometry(0.48, 0.08, 0.12);
+  const lLid = new THREE.Mesh(lidGeo, eyelidMat);
+  lLid.position.set(-0.45, 0.12, 1.14);
+  lLid.rotation.z = -0.12;
+  const rLid = new THREE.Mesh(lidGeo, eyelidMat);
+  rLid.position.set(0.45, 0.12, 1.14);
+  rLid.rotation.z = 0.12;
+  closedEyesGroup.add(lLid, rLid);
+  headGroup.add(closedEyesGroup);
 
   // Swatting Front Paw
   const pawPivot = new THREE.Group();
   pawPivot.position.set(0.9, 1.2, 2.1);
   addOutlinedMesh(pawPivot, new THREE.SphereGeometry(0.55, 10, 10), catFurMat, outlineMat, [0, 0, 0.6]);
-  group.add(pawPivot);
+  bodyGroup.add(pawPivot);
 
   // Whipping Tail
   const tailPivot = new THREE.Group();
@@ -1030,7 +1066,69 @@ export function createGattoBoss(outlineMat: THREE.Material): {
     [0, 1.2, -0.8],
     [-0.6, 0, 0]
   );
-  group.add(tailPivot);
+  bodyGroup.add(tailPivot);
 
-  return { group, tailPivot, pawPivot };
+  // Concentric Purr Vibration Ring on Floor ("Le Fusa" shockwave)
+  const purrWaveRing = new THREE.Mesh(
+    new THREE.RingGeometry(2.8, 3.3, 28),
+    new THREE.MeshBasicMaterial({
+      color: 0xd97706,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.75,
+    })
+  );
+  purrWaveRing.rotation.x = -Math.PI / 2;
+  purrWaveRing.position.y = 0.06;
+  purrWaveRing.visible = false;
+  group.add(purrWaveRing);
+
+  // Floating "Zzz" & Pencil-Drawn Buzzing Mosquitoes ("Zanzare") for Cat-Nap state
+  const sleepZzzGroup = new THREE.Group();
+  sleepZzzGroup.position.set(0, 4.2, 1.5);
+  sleepZzzGroup.visible = false;
+
+  const zMat = new THREE.MeshBasicMaterial({ color: 0x18181b });
+  for (let i = 0; i < 3; i++) {
+    const zItem = new THREE.Group();
+    zItem.position.set(i * 0.65 - 0.5, i * 0.85, 0);
+    const barTop = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.09, 0.06), zMat);
+    barTop.position.y = 0.2;
+    const barDiag = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.09, 0.06), zMat);
+    barDiag.rotation.z = 0.72;
+    const barBot = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.09, 0.06), zMat);
+    barBot.position.y = -0.2;
+    zItem.add(barTop, barDiag, barBot);
+    sleepZzzGroup.add(zItem);
+  }
+
+  // 2 Tiny Pencil-Drawn Mosquitoes orbiting the sleeping cat
+  const mosqMat = new THREE.MeshBasicMaterial({ color: 0x27272a });
+  const wingMat = new THREE.MeshBasicMaterial({ color: 0xfafaf9 });
+  for (let m = 0; m < 2; m++) {
+    const mosq = new THREE.Group();
+    const mBody = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 6), mosqMat);
+    const mWingL = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.14), wingMat);
+    mWingL.position.set(-0.14, 0.1, 0);
+    const mWingR = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.14), wingMat);
+    mWingR.position.set(0.14, 0.1, 0);
+    mosq.add(mBody, mWingL, mWingR);
+    mosq.position.set(Math.cos(m * Math.PI) * 1.6, 0.8 + m * 0.5, Math.sin(m * Math.PI) * 1.6);
+    sleepZzzGroup.add(mosq);
+  }
+
+  group.add(sleepZzzGroup);
+  group.scale.setScalar(2.2);
+
+  return {
+    group,
+    bodyGroup,
+    headGroup,
+    tailPivot,
+    pawPivot,
+    openEyesGroup,
+    closedEyesGroup,
+    purrWaveRing,
+    sleepZzzGroup,
+  };
 }

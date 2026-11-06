@@ -69,7 +69,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Fucile di precisione: tieni premuto Tasto Destro (o Z) per mirare ATTRAVERSO il fusto trasparente esagonale della penna e sparare il tubo d\'inchiostro legato a un elastico.',
     accentColor: '#2563eb',
     spawnRoom: 'scrivania',
-    spawnPos: [-14, 0.7, -12],
+    spawnPos: [-68, 0.9, -62],
   },
   {
     id: 'penna_scatto',
@@ -89,7 +89,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Ibrido tra fucile tattico e mitragliatrice leggera (l\'arma iconica impugnata nello screenshot!). Alta cadenza di fuoco e ricarica rapida con [R].',
     accentColor: '#3b82f6',
     spawnRoom: 'scrivania',
-    spawnPos: [-6, 0.7, -6],
+    spawnPos: [-22, 0.9, -24],
   },
   {
     id: 'spillatrice',
@@ -109,7 +109,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Spara grossi punti metallici a U: rimbalzano una volta sulle superfici dure, inchiodano i nemici per 1.5s e fanno saltare di dolore il Padrone di Casa ("YOWCH!").',
     accentColor: '#64748b',
     spawnRoom: 'scrivania',
-    spawnPos: [-10, 0.7, -3],
+    spawnPos: [-45, 0.9, -18],
   },
   {
     id: 'pennarello',
@@ -129,7 +129,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Bazooka pesante: lancia il tampone d\'inchiostro generando una grossa macchia nera indelebile sui muri e sui mobili (toglie tantissima Pazienza al Padrone di Casa!).',
     accentColor: '#1e293b',
     spawnRoom: 'scrivania',
-    spawnPos: [-17, 0.7, -5],
+    spawnPos: [-85, 0.9, -35],
   },
   {
     id: 'colla_caldo',
@@ -149,7 +149,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Spara globi caldi e filanti che rallentano e incollano i piedi degli avversari a terra (chi è incollato deve premere [SPAZIO] ripetutamente per liberarsi).',
     accentColor: '#f59e0b',
     spawnRoom: 'soggiorno',
-    spawnPos: [10, 0.7, 10],
+    spawnPos: [42, 0.9, 44],
   },
   {
     id: 'taglierino',
@@ -169,7 +169,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Come un fucile a pompa a corto raggio: espelle segmenti di lama affilati che mozzano a metà i nemici vicini e squarciano i cuscini del divano facendo volare piume!',
     accentColor: '#eab308',
     spawnRoom: 'scrivania',
-    spawnPos: [-4, 0.7, -12],
+    spawnPos: [-16, 0.9, -48],
   },
   {
     id: 'cucchiaio',
@@ -189,7 +189,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Arma da mischia sempre disponibile (anche a inizio modalità Scavenger). Veloce, affidabile, spinge indietro i nemici e lascia ammaccature sui muri.',
     accentColor: '#94a3b8',
     spawnRoom: 'cucina',
-    spawnPos: [-10, 0.7, 10],
+    spawnPos: [-42, 0.9, 42],
   },
   {
     id: 'mestolo',
@@ -209,7 +209,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Più lento del cucchiaio ma con un\'area di impatto ad arco vastissima: ideale per colpire gruppi di stickman o spingere la Biglia gigante.',
     accentColor: '#b45309',
     spawnRoom: 'cucina',
-    spawnPos: [-15, 0.7, 13],
+    spawnPos: [-68, 0.9, 55],
   },
   {
     id: 'righello',
@@ -229,7 +229,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Attacco in stoccata (affondo) rapidissimo e con allungo superiore: marchia ogni stickman colpito con un segno rosso di correzione.',
     accentColor: '#ef4444',
     spawnRoom: 'scrivania',
-    spawnPos: [-2, 0.7, -5],
+    spawnPos: [-12, 0.9, -18],
   },
   {
     id: 'forchetta',
@@ -249,7 +249,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Può essere lanciata come un giavellotto letale: dove atterra si conficca vibrando e devi passarci sopra (o premere [R]) per recuperarla!',
     accentColor: '#cbd5e1',
     spawnRoom: 'cucina',
-    spawnPos: [-7, 0.7, 15],
+    spawnPos: [-32, 0.9, 68],
   },
   {
     id: 'padella',
@@ -269,7 +269,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Mischia pesantissima. Mentre la impugni, la padella para e fa rimbalzare automaticamente il 70% dei proiettili frontali!',
     accentColor: '#334155',
     spawnRoom: 'cucina',
-    spawnPos: [-13, 0.7, 7],
+    spawnPos: [-56, 0.9, 28],
   },
   {
     id: 'spugna',
@@ -289,7 +289,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Usala vicino alla pozza di caffè rovesciata o all\'acqua per ASSORBIRE il liquido dal pavimento, oppure spremila contro un nemico!',
     accentColor: '#facc15',
     spawnRoom: 'bagno',
-    spawnPos: [8, 0.7, -12],
+    spawnPos: [36, 0.9, -48],
   },
   {
     id: 'gomma',
@@ -309,7 +309,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Rimbalza in modo imprevedibile fino a 5 volte sui mobili e cancella dalla realtà qualsiasi proiettile nemico incontri lungo la traiettoria.',
     accentColor: '#ec4899',
     spawnRoom: 'scrivania',
-    spawnPos: [-9, 0.7, -9],
+    spawnPos: [-36, 0.9, -36],
   },
   {
     id: 'molletta',
@@ -329,7 +329,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Lanciata a terra resta armata come trappola: appena uno stickman (o il Padrone di Casa) ci passa sopra, scatta con un forte "SNAP!".',
     accentColor: '#10b981',
     spawnRoom: 'bagno',
-    spawnPos: [14, 0.7, -4],
+    spawnPos: [58, 0.9, -22],
   },
   {
     id: 'lampadina',
@@ -349,7 +349,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Granata ibrida: esplode con un "POP!" accecando chi guarda e, se cade nella Vasca da Bagno o in una pozza d\'acqua, fulmina l\'intera area!',
     accentColor: '#fde047',
     spawnRoom: 'soggiorno',
-    spawnPos: [14, 0.7, 14],
+    spawnPos: [64, 0.9, 64],
   },
   {
     id: 'phon',
@@ -369,7 +369,7 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     mechanicDetail: 'Spara un getto di vento che fa volare via i nemici. COMBO LETALE: se spari col Phon dentro la Vasca da Bagno in cui c\'è qualcuno, fulmini tutti ("BZZZ-BZZZ!") forzando il respawn!',
     accentColor: '#06b6d4',
     spawnRoom: 'bagno',
-    spawnPos: [5, 0.7, -6],
+    spawnPos: [22, 0.9, -26],
   },
   {
     id: 'laser_gatto',
@@ -383,13 +383,13 @@ export const WEAPONS_ARSENAL: WeaponSpec[] = [
     magSize: -1,
     reloadTimeMs: 0,
     projectileSpeed: 80,
-    foleyOnomatopoeia: 'BEEP-MEOW!',
-    foleyDescription: 'Click elettronico del diodo laser + miagolio furioso del Gatto',
-    ragdollEffect: 'Attira istantaneamente il Gatto Gigante a saltare e distruggere il punto mirato!',
-    mechanicDetail: 'Strumento chiave per la modalità "Cat-astrophe": punta il cerchietto rosso laser su mobili, libri o nemici per far scattare la zampata del Gatto Gigante!',
+    foleyOnomatopoeia: 'BEEP-MEOW-PURRRR!',
+    foleyDescription: 'Click elettronico del diodo laser + miagolio e fusa sismiche del Gatto',
+    ragdollEffect: 'Attira il Gatto Gigante a saltare, fare le Fusa che fanno tremare tutta la stanza e infine schiacciare un pisolino (Cat-Nap)!',
+    mechanicDetail: 'Strumento chiave per "Cat-astrophe": punta il laser sui mobili per scatenare il Gatto! Dopo gli attacchi il Gatto fa le FUSA ("PURRRR!") facendo vibrare lo schermo e tremare tutti gli oggetti vicini; al 100% della Barra del Caos si acciambella e dorme con "Zzz" e zanzare attorno alla testa!',
     accentColor: '#ef4444',
     spawnRoom: 'soggiorno',
-    spawnPos: [5, 0.7, 5],
+    spawnPos: [20, 0.9, 20],
   },
 ];
 
