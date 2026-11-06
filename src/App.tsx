@@ -6,17 +6,23 @@ import { WEAPONS_ARSENAL, WeaponId, WeaponSpec } from './data/gddData';
 import {
   boilingTimeUniform,
   createBoilingOutlineMaterial,
+  createCharcoalStickmanTexture,
   createDottedInkTrailTexture,
   createFirstPersonViewmodel,
+  createGattoBoss,
   createGraphPaperTexture,
   createHatchShadowTexture,
+  createPadroneBoss,
   createStickmanActor,
   StickmanActor,
 } from './game/doodleModels';
 import { buildArenaMap, BuiltArena } from './game/mapBuilder';
 import { foleyAudio } from './game/soundEngine';
 
-type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'gameover';
+type GamePhase = 'title' | 'playing' | 'paused' | 'victory';
+type ArsenalMode = 'all_weapons' | 'scavenger';
+type BossMode = 'none' | 'padrone' | 'gatto';
+type HouseRoom = 'scrivania' | 'bagno' | 'cucina' | 'soggiorno';
 
 interface ActiveProjectile {
   active: boolean;
@@ -29,12 +35,13 @@ interface ActiveProjectile {
   bounceCount: number;
   life: number;
   damage: number;
+  isGroundedTrap: boolean;
+  isStuckFork: boolean;
 }
 
 interface ComicPopText {
   id: number;
   text: string;
-  color: string;
   x: number;
   y: number;
 }
@@ -48,73 +55,87 @@ interface InkTrailParticle {
   baseScale: number;
 }
 
-// Reusable module-scope math helpers (Zero-GC in animation loop)
+// Pre-allocated math helpers for Zero-GC loop
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _moveVec = new THREE.Vector3();
 const _toTarget = new THREE.Vector3();
 const _projNext = new THREE.Vector3();
 
+const INITIAL_MAGAZINES: Record<WeaponId, number> = WEAPONS_ARSENAL.reduce(
+  (acc, w) => {
+    acc[w.id] = w.magSize;
+    return acc;
+  },
+  {} as Record<WeaponId, number>
+);
+
 export default function App() {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
 
-  // Game Shell state
   const [gamePhase, setGamePhase] = useState<GamePhase>('title');
-  const [activeMap, setActiveMap] = useState<'scrivania' | 'bagno'>('scrivania');
-  const [activeWeaponId, setActiveWeaponId] = useState<WeaponId>('penna');
-  const [playerHp, setPlayerHp] = useState<number>(6); // 6 half-hearts = 3 full hearts
+  const [arsenalMode, setArsenalMode] = useState<ArsenalMode>('all_weapons');
+  const [bossMode, setBossMode] = useState<BossMode>('none');
+  const [currentRoom, setCurrentRoom] = useState<HouseRoom>('scrivania');
+  const [activeWeaponId, setActiveWeaponId] = useState<WeaponId>('penna_scatto');
+  const [unlockedWeapons, setUnlockedWeapons] = useState<WeaponId[]>(
+    WEAPONS_ARSENAL.map((w) => w.id)
+  );
+  const [hasCorkHelmet, setHasCorkHelmet] = useState<boolean>(false);
+
+  const [playerHp, setPlayerHp] = useState<number>(6); // 3 full hearts
+  const [stamina, setStamina] = useState<number>(100);
+  const [isCrouching, setIsCrouching] = useState<boolean>(false);
+  const [isReloading, setIsReloading] = useState<boolean>(false);
+  const [isSniperAiming, setIsSniperAiming] = useState<boolean>(false);
+
   const [playerScore, setPlayerScore] = useState<number>(0);
   const [botScore, setBotScore] = useState<number>(0);
-  const [matchSeconds, setMatchSeconds] = useState<number>(134); // Starts at 02:14 like screenshot!
+  const [matchSeconds, setMatchSeconds] = useState<number>(134); // 02:14 like screenshot!
   const [ammoCounts, setAmmoCounts] = useState<Record<WeaponId, number>>({
-    penna: 24,
-    taglierino: -1,
-    colla: 12,
-    cucchiaio: -1,
-    bianchetto: 10,
-    forbici: -1,
-    elastici: 18,
-    cerbottana: 5,
-    gomma: 6,
+    ...INITIAL_MAGAZINES,
   });
-  const [playerGluedCount, setPlayerGluedCount] = useState<number>(0); // >0 means player must mash SPACE
-  const [playerBlindTimer, setPlayerBlindTimer] = useState<number>(0); // >0 means screen covered in Bianchetto
+
+  // Boss meters: Padrone Patience (starts at 100%, win at 0%) or Cat Chaos (starts at 0%, win at 100%)
+  const [bossMeter, setBossMeter] = useState<number>(100);
+
+  const [playerGluedCount, setPlayerGluedCount] = useState<number>(0);
+  const [playerBlindTimer, setPlayerBlindTimer] = useState<number>(0);
   const [flushComboActive, setFlushComboActive] = useState<boolean>(false);
   const [comicPops, setComicPops] = useState<ComicPopText[]>([]);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
   const [gddOpen, setGddOpen] = useState<boolean>(false);
   const [killFeedMsg, setKillFeedMsg] = useState<string>(
-    'Benvenuto su Call of Doodle! Usa 1-9 per cambiare arma di cancelleria.'
+    'Casa Completa 3D pronta! Shift=Scatto · Spazio=Salto · C=Accovaccia · R=Ricarica'
   );
 
-  // Mutable refs for 60fps simulation loop
   const stateRef = useRef({
     phase: 'title' as GamePhase,
-    mapId: 'scrivania' as 'scrivania' | 'bagno',
-    weaponId: 'penna' as WeaponId,
+    arsenalMode: 'all_weapons' as ArsenalMode,
+    bossMode: 'none' as BossMode,
+    weaponId: 'penna_scatto' as WeaponId,
+    unlocked: new Set<WeaponId>(WEAPONS_ARSENAL.map((w) => w.id)),
     hp: 6,
+    stamina: 100,
+    crouching: false,
+    reloading: false,
+    reloadTimer: 0,
+    sniperAim: false,
     score: 0,
     botScore: 0,
+    bossMeter: 100,
     gluedMashesRemaining: 0,
     blindTimer: 0,
     hitstopTimer: 0,
     shakeIntensity: 0,
-    recoilKick: 0,
+    attackAnimTimer: 0,
     lastFireTime: 0,
     flushVortexTimer: 0,
-    ammo: {
-      penna: 24,
-      taglierino: -1,
-      colla: 12,
-      cucchiaio: -1,
-      bianchetto: 10,
-      forbici: -1,
-      elastici: 18,
-      cerbottana: 5,
-      gomma: 6,
-    } as Record<WeaponId, number>,
-    rebuildMapRequested: false,
+    ammo: { ...INITIAL_MAGAZINES } as Record<WeaponId, number>,
+    teleportRoomRequested: null as HouseRoom | null,
+    laserTargetPoint: new THREE.Vector3(6, 0.2, 6),
+    laserActive: false,
   });
 
   useEffect(() => {
@@ -125,27 +146,66 @@ export default function App() {
     stateRef.current.weaponId = activeWeaponId;
   }, [activeWeaponId]);
 
-  const triggerComicPop = (text: string, color = '#eab308') => {
+  const triggerComicPop = (text: string) => {
     const id = Date.now() + Math.random();
-    // Keep comic foley popups discreet in the upper-right periphery away from the crosshair
-    const x = 76 + Math.random() * 10;
+    const x = 77 + Math.random() * 9;
     const y = 15 + Math.random() * 8;
-    setComicPops((prev) => [...prev.slice(-1), { id, text, color, x, y }]);
+    setComicPops((prev) => [...prev.slice(-1), { id, text, x, y }]);
     window.setTimeout(() => {
       setComicPops((prev) => prev.filter((p) => p.id !== id));
-    }, 620);
+    }, 580);
   };
 
-  // Match countdown timer (ticks when playing)
+  // Switch between "All Weapons Unlocked" and "Scavenger (Find in Map)"
+  const handleSelectArsenalMode = (mode: ArsenalMode) => {
+    setArsenalMode(mode);
+    stateRef.current.arsenalMode = mode;
+    if (mode === 'all_weapons') {
+      const all = WEAPONS_ARSENAL.map((w) => w.id);
+      stateRef.current.unlocked = new Set(all);
+      setUnlockedWeapons(all);
+      setKillFeedMsg('Modalità Sandbox: Tutte le 17 armi di casa e cancelleria sono sbloccate!');
+    } else {
+      const starter: WeaponId[] = ['cucchiaio'];
+      stateRef.current.unlocked = new Set(starter);
+      setUnlockedWeapons(starter);
+      stateRef.current.weaponId = 'cucchiaio';
+      setActiveWeaponId('cucchiaio');
+      setKillFeedMsg(
+        'Modalità Scavenger: Inizi col Cucchiaio! Esplora le 4 stanze per raccogliere le altre armi.'
+      );
+    }
+  };
+
+  const handleSelectBossMode = (mode: BossMode) => {
+    setBossMode(mode);
+    stateRef.current.bossMode = mode;
+    if (mode === 'padrone') {
+      stateRef.current.bossMeter = 100;
+      setBossMeter(100);
+      setKillFeedMsg(
+        'BOSS CO-OP: Il Padrone di Casa è entrato! Usa Pennarello, Spille e Taglierino per azzerare la sua Pazienza!'
+      );
+    } else if (mode === 'gatto') {
+      stateRef.current.bossMeter = 0;
+      setBossMeter(0);
+      stateRef.current.weaponId = 'laser_gatto';
+      setActiveWeaponId('laser_gatto');
+      setKillFeedMsg(
+        'BOSS CO-OP: Il Gatto Disastro è in casa! Usa il Puntatore Laser [L] sui mobili per fargli distruggere tutto!'
+      );
+    } else {
+      setKillFeedMsg('Modalità Arena Classica contro la squadra di Stickman Bot.');
+    }
+  };
+
   useEffect(() => {
     if (gamePhase !== 'playing' || gddOpen) return;
     const timer = window.setInterval(() => {
       setMatchSeconds((prev) => {
         if (prev <= 1) {
           setGamePhase('victory');
-          if (document.pointerLockElement) {
-            document.exitPointerLock?.();
-          }
+          if (document.pointerLockElement) document.exitPointerLock?.();
           return 0;
         }
         return prev - 1;
@@ -154,12 +214,11 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [gamePhase, gddOpen]);
 
-  // Main Three.js WebGL Engine initialization (Mounted once in isolated ref container)
+  // Main Three.js WebGL Engine
   useEffect(() => {
     const mountEl = canvasMountRef.current;
     if (!mountEl) return;
 
-    // 1. Software-WebGL Guard (Three.js Skill Directive)
     const isSoftwareGl = (() => {
       const gl = document.createElement('canvas').getContext('webgl2');
       if (!gl) return true;
@@ -178,7 +237,10 @@ export default function App() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(mountEl.clientWidth || window.innerWidth, mountEl.clientHeight || window.innerHeight);
+    renderer.setSize(
+      mountEl.clientWidth || window.innerWidth,
+      mountEl.clientHeight || window.innerHeight
+    );
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -187,25 +249,23 @@ export default function App() {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf4efe1);
-    scene.fog = new THREE.FogExp2(0xf4efe1, 0.015);
+    scene.fog = new THREE.FogExp2(0xf4efe1, 0.011);
 
-    // 2. Studio Environment Reflection (RoomEnvironment + PMREMGenerator)
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
     pmremGenerator.dispose();
 
-    // 3. Balanced 3-Point Studio Lighting Rig (Warm Key + Cool Hemisphere Fill)
-    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0xd6d3d1, 0.95);
-    hemiLight.position.set(0, 25, 0);
+    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0xd6d3d1, 0.98);
+    hemiLight.position.set(0, 28, 0);
     scene.add(hemiLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.35);
-    keyLight.position.set(16, 28, 14);
+    const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.32);
+    keyLight.position.set(18, 32, 16);
     keyLight.castShadow = !isSoftwareGl;
     keyLight.shadow.mapSize.set(1024, 1024);
     keyLight.shadow.camera.near = 2;
-    keyLight.shadow.camera.far = 65;
-    const d = 24;
+    keyLight.shadow.camera.far = 80;
+    const d = 32;
     keyLight.shadow.camera.left = -d;
     keyLight.shadow.camera.right = d;
     keyLight.shadow.camera.top = d;
@@ -214,48 +274,58 @@ export default function App() {
     keyLight.shadow.normalBias = 0.02;
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight(0xe0f2fe, 0.55);
-    rimLight.position.set(-18, 15, -16);
-    scene.add(rimLight);
-
-    // 4. First-Person Perspective Camera + Stickman Hands Viewmodel
     const camera = new THREE.PerspectiveCamera(
       72,
       (mountEl.clientWidth || window.innerWidth) / (mountEl.clientHeight || window.innerHeight),
       0.1,
-      140
+      160
     );
     camera.rotation.order = 'YXZ';
     scene.add(camera);
 
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
-    const outlineMat = createBoilingOutlineMaterial(0.032);
+    const outlineMat = createBoilingOutlineMaterial(0.036);
+    const charcoalTex = createCharcoalStickmanTexture(maxAniso);
     const graphPaperTex = createGraphPaperTexture(maxAniso);
     const hatchShadowTex = createHatchShadowTexture();
     const dottedInkTrailTex = createDottedInkTrailTexture();
 
-    const viewmodel = createFirstPersonViewmodel(outlineMat);
+    const viewmodel = createFirstPersonViewmodel(outlineMat, charcoalTex);
     camera.add(viewmodel.root);
 
-    // Build initial arena map
-    let currentArena: BuiltArena = buildArenaMap(
-      stateRef.current.mapId,
-      maxAniso,
-      outlineMat,
-      graphPaperTex
-    );
+    // Build Complete 4-Room House Arena
+    const currentArena: BuiltArena = buildArenaMap(maxAniso, outlineMat, graphPaperTex);
     scene.add(currentArena.group);
 
-    // Decal Pool for Black Ink Splats (Taglierino/Forbici) & Wall Pencil Dents (Cucchiaio)
+    // Boss 1: Il Padrone di Casa & Boss 2: Il Gatto Disastro
+    const padroneBoss = createPadroneBoss(outlineMat);
+    padroneBoss.group.position.set(-4, 0, -4);
+    padroneBoss.group.visible = false;
+    scene.add(padroneBoss.group);
+
+    const gattoBoss = createGattoBoss(outlineMat);
+    gattoBoss.group.position.set(5, 0, 5);
+    gattoBoss.group.visible = false;
+    scene.add(gattoBoss.group);
+
+    // Red Laser Dot Mesh for Cat-astrophe Mode
+    const laserDotMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 10, 10),
+      new THREE.MeshBasicMaterial({ color: 0xff0000 })
+    );
+    laserDotMesh.visible = false;
+    scene.add(laserDotMesh);
+
+    // Decal Pool for Black Ink Splats & Permanent Marker Graffiti
     const decalPool: THREE.Mesh[] = [];
-    const inkDecalGeo = new THREE.CircleGeometry(0.95, 12);
+    const inkDecalGeo = new THREE.CircleGeometry(1.05, 12);
     const inkDecalMat = new THREE.MeshBasicMaterial({
       color: 0x121210,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 24; i++) {
       const m = new THREE.Mesh(inkDecalGeo, inkDecalMat);
       m.rotation.x = -Math.PI / 2;
       m.position.y = 0.025;
@@ -328,10 +398,10 @@ export default function App() {
       p.mesh.visible = true;
     };
 
-    // Pooled Projectiles (28 projectiles for Zero-GC)
+    // Pooled Projectiles & Ground Traps (32 items)
     const projectilePool: ActiveProjectile[] = [];
-    const projGeo = new THREE.SphereGeometry(0.18, 8, 8);
-    for (let i = 0; i < 28; i++) {
+    const projGeo = new THREE.SphereGeometry(0.19, 8, 8);
+    for (let i = 0; i < 32; i++) {
       const mat = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.4 });
       const mesh = new THREE.Mesh(projGeo, mat);
       mesh.visible = false;
@@ -341,146 +411,275 @@ export default function App() {
         mesh,
         position: mesh.position,
         velocity: new THREE.Vector3(),
-        weaponId: 'penna',
+        weaponId: 'penna_scatto',
         fromPlayer: true,
         bouncesLeft: 0,
         bounceCount: 0,
         life: 0,
         damage: 2,
+        isGroundedTrap: false,
+        isStuckFork: false,
       });
     }
 
-    // Spawn 5 Stickman Bot Actors
+    // Spawn 6 Stickman Bots across the 4 rooms of the house
     const botNames = [
-      'Scarabocchio_99',
+      'Scarabocchio_P2',
       'TrattoPen_Nero',
       'GommaPane_X',
       'Righello_30cm',
       'Temperino_Pro',
+      'Bianchetto_Kid',
     ];
     const botSpawns: [number, number][] = [
+      [-11, -13],
+      [-5, -9],
+      [11, -11],
+      [-12, 11],
+      [11, 11],
       [-8, -4],
-      [7, -6],
-      [6, 6],
-      [-7, 8],
-      [1, -9],
     ];
     const bots: StickmanActor[] = botSpawns.map(([sx, sz], idx) => {
-      const actor = createStickmanActor(idx, botNames[idx], sx, sz, hatchShadowTex, outlineMat);
+      const actor = createStickmanActor(
+        idx,
+        botNames[idx],
+        sx,
+        sz,
+        hatchShadowTex,
+        outlineMat,
+        charcoalTex
+      );
       scene.add(actor.group);
       return actor;
     });
     const botStepTimers = bots.map(() => 0);
     const botStepFootToggle = bots.map(() => false);
 
-    // Player Physics & Input State
+    // Player State (Starts in Lo Studio / La Scrivania looking at the screenshot scene!)
     const player = {
-      pos: new THREE.Vector3(0, 0, 14.5),
+      pos: new THREE.Vector3(-4.5, 0, -1.2),
       vel: new THREE.Vector3(0, 0, 0),
-      yaw: 0,
-      pitch: -0.05,
+      yaw: 0.42,
+      pitch: -0.06,
+      eyeHeight: 1.68,
       grounded: true,
       coyoteTimer: 0,
       walkCycle: 0,
       stepTrailTimer: 0,
       stepFootToggle: false,
+      slipperyTimer: 0,
     };
 
     const heldKeys = new Set<string>();
 
     const switchWeapon = (wId: WeaponId) => {
+      if (!stateRef.current.unlocked.has(wId)) {
+        triggerComicPop('ARMA NON ANCORA TROVATA!');
+        return;
+      }
       stateRef.current.weaponId = wId;
+      stateRef.current.sniperAim = false;
+      setIsSniperAiming(false);
       setActiveWeaponId(wId);
-      (Object.keys(viewmodel.weaponMeshes) as WeaponId[]).forEach((k) => {
-        viewmodel.weaponMeshes[k].visible = k === wId;
-      });
+    };
+
+    const startReload = () => {
+      const spec = WEAPONS_ARSENAL.find((w) => w.id === stateRef.current.weaponId)!;
+      if (spec.magSize === -1 || stateRef.current.reloading) return;
+      if (stateRef.current.ammo[spec.id] === spec.magSize) return;
+
+      stateRef.current.reloading = true;
+      stateRef.current.reloadTimer = spec.reloadTimeMs / 1000;
+      setIsReloading(true);
+      foleyAudio.playReload();
+      triggerComicPop('RICARICA...');
     };
 
     const triggerToiletFlushCombo = () => {
-      if (stateRef.current.mapId !== 'bagno' || stateRef.current.flushVortexTimer > 0) return;
+      if (stateRef.current.flushVortexTimer > 0) return;
       stateRef.current.flushVortexTimer = 5.0;
       setFlushComboActive(true);
       foleyAudio.playToiletFlush();
-      triggerComicPop('SCARICO TOTALE ATTIVATO!', '#06b6d4');
-      setKillFeedMsg('MEGA-COMBO: Hai aperto la tavoletta e tirato lo sciacquone del WC!');
+      triggerComicPop('SCARICO WC!');
+      setKillFeedMsg('MEGA-COMBO BAGNO: Hai aperto la tavoletta e tirato lo sciacquone del WC!');
+    };
+
+    const damageBossPadrone = (amount: number, reason: string) => {
+      if (stateRef.current.bossMode !== 'padrone') return;
+      stateRef.current.bossMeter = Math.max(0, stateRef.current.bossMeter - amount);
+      setBossMeter(Math.round(stateRef.current.bossMeter));
+      setKillFeedMsg(`CAOS DOMESTICO: ${reason} (-${amount}% Pazienza del Padrone!)`);
+      if (stateRef.current.bossMeter <= 0) {
+        setGamePhase('victory');
+        if (document.pointerLockElement) document.exitPointerLock?.();
+      }
+    };
+
+    const addCatChaos = (amount: number, reason: string) => {
+      if (stateRef.current.bossMode !== 'gatto') return;
+      stateRef.current.bossMeter = Math.min(100, stateRef.current.bossMeter + amount);
+      setBossMeter(Math.round(stateRef.current.bossMeter));
+      foleyAudio.playCatMeow();
+      setKillFeedMsg(`CAT-ASTROPHE: ${reason} (+${amount}% Barra del Caos!)`);
+      if (stateRef.current.bossMeter >= 100) {
+        setGamePhase('victory');
+        if (document.pointerLockElement) document.exitPointerLock?.();
+      }
     };
 
     const fireCurrentWeapon = () => {
-      if (stateRef.current.phase !== 'playing') return;
+      if (stateRef.current.phase !== 'playing' || stateRef.current.reloading) return;
       const now = performance.now();
       const spec = WEAPONS_ARSENAL.find((w) => w.id === stateRef.current.weaponId)!;
       if (now - stateRef.current.lastFireTime < spec.fireRateMs) return;
 
-      // Check ammo
       const currentAmmo = stateRef.current.ammo[spec.id];
       if (currentAmmo === 0) {
-        triggerComicPop('MUNIZIONI ESAURITE! (Raccogli Carta)', '#ef4444');
+        if (spec.id === 'forchetta') {
+          triggerComicPop('RECUPERA FORCHETTA O PREMI [R]!');
+        } else {
+          startReload();
+        }
         return;
       }
+
       if (currentAmmo > 0) {
         stateRef.current.ammo[spec.id] = currentAmmo - 1;
         setAmmoCounts({ ...stateRef.current.ammo });
       }
 
       stateRef.current.lastFireTime = now;
-      stateRef.current.recoilKick = 1.0;
+      stateRef.current.attackAnimTimer = 0.28;
       foleyAudio.playWeaponFire(spec.id);
-      triggerComicPop(spec.foleyOnomatopoeia, spec.accentColor);
+      triggerComicPop(spec.foleyOnomatopoeia);
 
-      // Melee Weapons (Taglierino, Cucchiaio, Forbici)
+      camera.getWorldDirection(_forward);
+
+      // Special Weapon: Puntatore Laser (Guides Giant Cat!)
+      if (spec.id === 'laser_gatto') {
+        stateRef.current.laserActive = true;
+        stateRef.current.laserTargetPoint
+          .copy(player.pos)
+          .addScaledVector(_forward, 14)
+          .setY(0.35);
+        laserDotMesh.position.copy(stateRef.current.laserTargetPoint);
+        laserDotMesh.visible = true;
+        if (stateRef.current.bossMode === 'gatto') {
+          addCatChaos(14, 'Il Gatto ha inseguito il Puntatore Laser travolgendo i mobili!');
+        }
+        return;
+      }
+
+      // Special Weapon: Spugna (Soaks up slippery coffee puddle!)
+      if (spec.id === 'spugna') {
+        if (
+          currentArena.coffeePuddleMesh.visible &&
+          player.pos.distanceTo(currentArena.coffeePuddleCenter) < 5.5
+        ) {
+          currentArena.coffeePuddleMesh.visible = false;
+          setKillFeedMsg('SPUGNA: Hai assorbito la pozza di caffè rendendo il pavimento sicuro!');
+        }
+      }
+
+      // Special Weapon: Phon (Blows wind & triggers BZZZ-BZZZ electro-bath combo if aimed at Bathtub!)
+      if (spec.id === 'phon') {
+        const bath = currentArena.bathtubBounds;
+        const aimPoint = player.pos.clone().addScaledVector(_forward, 9);
+        const aimedAtBath =
+          aimPoint.x >= bath.minX - 2 &&
+          aimPoint.x <= bath.maxX + 2 &&
+          aimPoint.z >= bath.minZ - 2 &&
+          aimPoint.z <= bath.maxZ + 2;
+
+        bots.forEach((bot) => {
+          if (bot.state !== 'alive') return;
+          const inBath =
+            bot.position.x >= bath.minX - 1.5 &&
+            bot.position.x <= bath.maxX + 1.5 &&
+            bot.position.z >= bath.minZ - 1.5 &&
+            bot.position.z <= bath.maxZ + 1.5;
+
+          if (aimedAtBath && inBath) {
+            foleyAudio.playElectroBathBuzz();
+            bot.state = 'electrocuted';
+            bot.stateTimer = 2.2;
+            stateRef.current.score += 1;
+            setPlayerScore(stateRef.current.score);
+            setKillFeedMsg(
+              `BZZZ-BZZZ! Hai fulminato ${bot.name} nella Vasca da Bagno col Phon!`
+            );
+          } else {
+            _toTarget.subVectors(bot.position, player.pos);
+            if (_toTarget.length() < 11) {
+              _toTarget.normalize();
+              bot.velocity.addScaledVector(_toTarget, 19);
+              bot.velocity.y = 8;
+            }
+          }
+        });
+        return;
+      }
+
+      // Melee Weapons (Cucchiaio, Mestolo, Righello, Taglierino, Padella, Spugna)
       if (spec.projectileSpeed === 0) {
-        camera.getWorldDirection(_forward);
-        let hitSomeone = false;
+        const reach =
+          spec.id === 'righello' ? 5.8 : spec.id === 'mestolo' ? 5.2 : 4.5;
+        const coneDot = spec.id === 'mestolo' ? -0.1 : 0.35; // Mestolo hits a huge 160° arc!
 
         bots.forEach((bot) => {
           if (bot.state !== 'alive') return;
           _toTarget.subVectors(bot.position, player.pos);
           _toTarget.y = 0;
           const dist = _toTarget.length();
-          if (dist < 4.6) {
+          if (dist < reach) {
             _toTarget.normalize();
             const forwardFlat = _forward.clone().setY(0).normalize();
-            if (forwardFlat.dot(_toTarget) > 0.35 || dist < 2.2) {
-              hitSomeone = true;
+            if (forwardFlat.dot(_toTarget) > coneDot || dist < 2.2) {
               applyWeaponHitToBot(bot, spec, _toTarget);
             }
           }
         });
 
-        // If using Cucchiaio near a structure, leave a drawn dent + camera shake
-        if (spec.id === 'cucchiaio') {
+        if (spec.id === 'taglierino' && stateRef.current.bossMode === 'padrone') {
+          damageBossPadrone(14, 'Hai squarciato i cuscini col Taglierino facendo volare piume!');
+        }
+        if (spec.id === 'padella' || spec.id === 'cucchiaio') {
           stateRef.current.shakeIntensity = 0.22;
-          if (hitSomeone) {
-            stateRef.current.hitstopTimer = 0.065; // 65ms simulation hitstop on heavy impact!
-          }
         }
         return;
       }
 
-      // Ranged Projectile Weapons
+      // Ranged Projectiles & Thrown Traps
       const proj = projectilePool.find((p) => !p.active);
       if (!proj) return;
 
-      camera.getWorldDirection(_forward);
       proj.active = true;
       proj.weaponId = spec.id;
       proj.fromPlayer = true;
       proj.damage = spec.damage;
-      proj.life = 4.2;
+      proj.life = spec.id === 'molletta' || spec.id === 'forchetta' ? 9.0 : 4.2;
       proj.bounceCount = 0;
-      proj.bouncesLeft = spec.id === 'elastici' ? 4 : spec.id === 'gomma' ? 3 : 0;
+      proj.isGroundedTrap = false;
+      proj.isStuckFork = false;
+      proj.bouncesLeft =
+        spec.id === 'gomma' ? 5 : spec.id === 'spillatrice' ? 2 : 0;
 
       proj.position.copy(player.pos).addScaledVector(_forward, 0.9);
-      proj.position.y += 1.45;
+      proj.position.y += player.eyeHeight - 0.22;
       proj.velocity.copy(_forward).multiplyScalar(spec.projectileSpeed);
-      if (spec.id === 'gomma' || spec.id === 'colla' || spec.id === 'bianchetto') {
-        proj.velocity.y += 3.2; // Arced throw
+      if (
+        spec.id === 'gomma' ||
+        spec.id === 'molletta' ||
+        spec.id === 'lampadina' ||
+        spec.id === 'pennarello'
+      ) {
+        proj.velocity.y += 3.4;
       }
 
       const mat = proj.mesh.material as THREE.MeshStandardMaterial;
       mat.color.set(spec.accentColor);
       proj.mesh.scale.setScalar(
-        spec.id === 'gomma' ? 1.65 : spec.id === 'bianchetto' ? 1.4 : 1.0
+        spec.id === 'pennarello' ? 1.8 : spec.id === 'gomma' ? 1.5 : 1.05
       );
       proj.mesh.visible = true;
     };
@@ -492,18 +691,27 @@ export default function App() {
     ) => {
       bot.hp -= spec.damage;
 
-      if (spec.id === 'colla') {
-        bot.gluedTimer = 3.0;
+      if (spec.id === 'righello') {
+        bot.redPenMark.visible = true;
+        setKillFeedMsg(`SWOOSH! Hai marchiato ${bot.name} con un segno rosso col Righello 30cm!`);
+      } else if (spec.id === 'colla_caldo' || spec.id === 'spillatrice' || spec.id === 'molletta') {
+        bot.gluedTimer = spec.id === 'spillatrice' ? 1.8 : 3.2;
         bot.gluePuddle.visible = true;
-        setKillFeedMsg(`Hai incollato a terra ${bot.name} per 3 secondi col Tubetto di Colla!`);
-      } else if (spec.id === 'bianchetto') {
+        setKillFeedMsg(
+          spec.id === 'spillatrice'
+            ? `KA-CHUNK! Hai inchiodato ${bot.name} con la Sparapunti!`
+            : `Hai bloccato a terra ${bot.name} con ${spec.name}!`
+        );
+      } else if (spec.id === 'lampadina') {
         bot.blindedTimer = 2.5;
         bot.whiteoutSplat.visible = true;
-        setKillFeedMsg(`Hai accecato ${bot.name} col Bianchetto (Correction Fluid)!`);
-      } else if (spec.id === 'cucchiaio') {
-        bot.velocity.addScaledVector(hitDir, 18);
-        bot.velocity.y = 7.5;
-        stateRef.current.hitstopTimer = 0.06;
+      } else if (spec.id === 'padella') {
+        bot.velocity.addScaledVector(hitDir, 28);
+        bot.velocity.y = 12;
+        stateRef.current.hitstopTimer = 0.075;
+      } else if (spec.id === 'cucchiaio' || spec.id === 'mestolo') {
+        bot.velocity.addScaledVector(hitDir, 16);
+        bot.velocity.y = 6.5;
       } else {
         bot.velocity.addScaledVector(hitDir, 6.5);
       }
@@ -514,31 +722,28 @@ export default function App() {
         spawnInkSplat(bot.position.x, bot.position.z, 1.3);
 
         if (spec.id === 'taglierino') {
-          // Cut stickman in half!
           bot.state = 'sliced';
           bot.stateTimer = 2.6;
           bot.upperVel.copy(hitDir).multiplyScalar(8).setY(6.5);
-          setKillFeedMsg(`ZIIIP! Hai mozzato a metà ${bot.name} col Taglierino!`);
-        } else if (spec.id === 'forbici') {
-          // Decapitate spherical head so it rolls like a ball!
-          bot.state = 'decapitated';
-          bot.stateTimer = 2.8;
-          bot.headVel.copy(hitDir).multiplyScalar(11).setY(5.5);
-          setKillFeedMsg(`SNIP-SNIP! La testa di ${bot.name} rotola via come una biglia!`);
+          setKillFeedMsg(`SNIKT-SNIKT! Hai mozzato a metà ${bot.name} col Taglierino!`);
         } else {
-          // Comedic full ragdoll tumble
           bot.state = 'ragdoll';
           bot.stateTimer = 2.4;
-          bot.upperVel.copy(hitDir).multiplyScalar(12).setY(8.0);
-          setKillFeedMsg(`${bot.name} eliminato con ${spec.name} (${spec.foleyOnomatopoeia})`);
+          bot.upperVel.copy(hitDir).multiplyScalar(13).setY(8.5);
+          setKillFeedMsg(`${bot.name} spazzato via con ${spec.name} (${spec.foleyOnomatopoeia})`);
         }
       }
     };
 
     const respawnBot = (bot: StickmanActor) => {
-      const angle = Math.random() * Math.PI * 2;
-      const radius = 9 + Math.random() * 8;
-      bot.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+      const roomOffsets: [number, number][] = [
+        [-12, -12],
+        [12, -12],
+        [-12, 12],
+        [12, 12],
+      ];
+      const [rx, rz] = roomOffsets[bot.id % roomOffsets.length];
+      bot.position.set(rx + (Math.random() - 0.5) * 6, 0, rz + (Math.random() - 0.5) * 6);
       bot.velocity.set(0, 0, 0);
       bot.hp = bot.maxHp;
       bot.state = 'alive';
@@ -546,14 +751,14 @@ export default function App() {
       bot.blindedTimer = 0;
       bot.gluePuddle.visible = false;
       bot.whiteoutSplat.visible = false;
+      bot.redPenMark.visible = false;
       bot.group.rotation.set(0, 0, 0);
       bot.upperGroup.position.set(0, 0.95, 0);
       bot.upperGroup.rotation.set(0, 0, 0);
-      bot.headGroup.position.set(0, 1.24, 0);
+      bot.headGroup.position.set(0, 1.28, 0);
       bot.headGroup.rotation.set(0, 0, 0);
     };
 
-    // Input Event Listeners
     const onKeyDown = (e: KeyboardEvent) => {
       const code = e.code;
       heldKeys.add(code);
@@ -579,45 +784,71 @@ export default function App() {
 
       if (stateRef.current.phase !== 'playing') return;
 
-      // Weapon hotkeys 1 - 9
-      if (code.startsWith('Digit')) {
-        const num = parseInt(code.replace('Digit', ''), 10);
-        const found = WEAPONS_ARSENAL.find((w) => w.keyNum === num);
-        if (found) switchWeapon(found.id);
+      // Crouch toggle / hold with [C]
+      if (code === 'KeyC') {
+        stateRef.current.crouching = !stateRef.current.crouching;
+        setIsCrouching(stateRef.current.crouching);
       }
 
-      // Spacebar: Jump OR Button-Mash to unglue shoes!
+      // Reload with [R]
+      if (code === 'KeyR') {
+        if (stateRef.current.weaponId === 'forchetta' && stateRef.current.ammo.forchetta === 0) {
+          stateRef.current.ammo.forchetta = 1;
+          setAmmoCounts({ ...stateRef.current.ammo });
+          foleyAudio.playReload();
+          triggerComicPop('FORCHETTA RECUPERATA!');
+        } else {
+          startReload();
+        }
+      }
+
+      // Sniper Optical Zoom through Penna Blu Bic with [Z]
+      if (code === 'KeyZ' && stateRef.current.weaponId === 'penna_bic') {
+        stateRef.current.sniperAim = !stateRef.current.sniperAim;
+        setIsSniperAiming(stateRef.current.sniperAim);
+      }
+
+      // Weapon Hotkeys (1-9, 0, Q, V, G, T, B, F, L)
+      const keyMap: Record<string, WeaponId> = {
+        Digit1: 'penna_bic',
+        Digit2: 'penna_scatto',
+        Digit3: 'spillatrice',
+        Digit4: 'pennarello',
+        Digit5: 'colla_caldo',
+        Digit6: 'taglierino',
+        Digit7: 'cucchiaio',
+        Digit8: 'mestolo',
+        Digit9: 'righello',
+        Digit0: 'forchetta',
+        KeyQ: 'padella',
+        KeyV: 'spugna',
+        KeyG: 'gomma',
+        KeyT: 'molletta',
+        KeyB: 'lampadina',
+        KeyF: 'phon',
+        KeyL: 'laser_gatto',
+      };
+      if (keyMap[code]) {
+        switchWeapon(keyMap[code]);
+      }
+
+      // Spacebar: Jump OR unglue shoes
       if (code === 'Space') {
         if (stateRef.current.gluedMashesRemaining > 0) {
           stateRef.current.gluedMashesRemaining -= 1;
           setPlayerGluedCount(stateRef.current.gluedMashesRemaining);
-          foleyAudio.playWeaponFire('colla');
-          if (stateRef.current.gluedMashesRemaining === 0) {
-            triggerComicPop('SCARPE SCOLLATE!', '#22c55e');
-          }
+          foleyAudio.playWeaponFire('colla_caldo');
         } else if (player.grounded || player.coyoteTimer > 0) {
-          player.vel.y = 10.5;
+          player.vel.y = 11.2;
           player.grounded = false;
           player.coyoteTimer = 0;
           foleyAudio.playBoing(0);
         }
       }
 
-      // E key: Trigger Toilet Flush Vortex Combo in Il Bagno or switch map
+      // E key: Toilet Flush Combo in Il Bagno
       if (code === 'KeyE') {
-        if (stateRef.current.mapId === 'bagno') {
-          triggerToiletFlushCombo();
-        } else {
-          // Switch to Il Bagno to try the toilet flush combo!
-          stateRef.current.mapId = 'bagno';
-          stateRef.current.rebuildMapRequested = true;
-          setActiveMap('bagno');
-          setKillFeedMsg('Mappa cambiata: IL BAGNO! Premi [E] vicino al WC per tirare lo Sciacquone!');
-        }
-      }
-
-      if (code === 'KeyF') {
-        fireCurrentWeapon();
+        triggerToiletFlushCombo();
       }
     };
 
@@ -632,17 +863,19 @@ export default function App() {
     const onMouseMove = (e: MouseEvent) => {
       if (stateRef.current.phase !== 'playing') return;
       if (document.pointerLockElement === renderer.domElement) {
-        player.yaw -= e.movementX * 0.0022;
-        player.pitch = THREE.MathUtils.clamp(
-          player.pitch - e.movementY * 0.0022,
-          -1.15,
-          1.15
-        );
+        const sens = stateRef.current.sniperAim ? 0.0011 : 0.0022;
+        player.yaw -= e.movementX * sens;
+        player.pitch = THREE.MathUtils.clamp(player.pitch - e.movementY * sens, -1.15, 1.15);
       }
     };
 
     const onMouseDown = (e: MouseEvent) => {
       if (stateRef.current.phase !== 'playing') return;
+      if (e.button === 2 && stateRef.current.weaponId === 'penna_bic') {
+        stateRef.current.sniperAim = !stateRef.current.sniperAim;
+        setIsSniperAiming(stateRef.current.sniperAim);
+        return;
+      }
       if (e.button === 0) {
         if (document.pointerLockElement !== renderer.domElement) {
           renderer.domElement.requestPointerLock?.();
@@ -651,11 +884,18 @@ export default function App() {
       }
     };
 
+    const onContextMenu = (e: MouseEvent) => e.preventDefault();
+
     const onWheel = (e: WheelEvent) => {
       if (stateRef.current.phase !== 'playing') return;
-      const idx = WEAPONS_ARSENAL.findIndex((w) => w.id === stateRef.current.weaponId);
-      const nextIdx = (idx + (e.deltaY > 0 ? 1 : -1) + WEAPONS_ARSENAL.length) % WEAPONS_ARSENAL.length;
-      switchWeapon(WEAPONS_ARSENAL[nextIdx].id);
+      const unlockedList = WEAPONS_ARSENAL.filter((w) =>
+        stateRef.current.unlocked.has(w.id)
+      );
+      if (unlockedList.length === 0) return;
+      const idx = unlockedList.findIndex((w) => w.id === stateRef.current.weaponId);
+      const nextIdx =
+        (idx + (e.deltaY > 0 ? 1 : -1) + unlockedList.length) % unlockedList.length;
+      switchWeapon(unlockedList[nextIdx].id);
     };
 
     const onResize = () => {
@@ -674,13 +914,12 @@ export default function App() {
     window.addEventListener('wheel', onWheel);
     window.addEventListener('resize', onResize);
     renderer.domElement.addEventListener('mousedown', onMouseDown);
+    renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
-    // Pre-warm shaders on hardware GPUs
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
     }
 
-    // 5. Animation & Physics Loop with Software-WebGL `afterDraw` pacing
     const clock = new THREE.Clock();
     let frameId = 0;
 
@@ -706,33 +945,39 @@ export default function App() {
 
     function tick() {
       const rawDt = clock.getDelta();
-      const dt = Math.min(rawDt, 0.05); // Clamp frame delta time
+      const dt = Math.min(rawDt, 0.05);
       const elapsed = clock.getElapsedTime();
 
-      // Update global 12 FPS boiling-line outline shader uniform
       boilingTimeUniform.value = elapsed;
 
-      // Check if map switch was requested from UI
-      if (stateRef.current.rebuildMapRequested) {
-        stateRef.current.rebuildMapRequested = false;
-        scene.remove(currentArena.group);
-        currentArena = buildArenaMap(
-          stateRef.current.mapId,
-          maxAniso,
-          outlineMat,
-          graphPaperTex
-        );
-        scene.add(currentArena.group);
-        player.pos.set(0, 0, 14.5);
+      // Room Teleport Request
+      if (stateRef.current.teleportRoomRequested) {
+        const targetRoom = stateRef.current.teleportRoomRequested;
+        stateRef.current.teleportRoomRequested = null;
+        if (targetRoom === 'scrivania') player.pos.set(-5, 0, -3);
+        else if (targetRoom === 'bagno') player.pos.set(7, 0, -9);
+        else if (targetRoom === 'cucina') player.pos.set(-9, 0, 12);
+        else if (targetRoom === 'soggiorno') player.pos.set(8, 0, 9);
         player.vel.set(0, 0, 0);
       }
 
-      // Sync active viewmodel mesh
+      // Sync active weapon mesh visibility
       (Object.keys(viewmodel.weaponMeshes) as WeaponId[]).forEach((k) => {
         viewmodel.weaponMeshes[k].visible = k === stateRef.current.weaponId;
       });
 
-      // Handle brief hitstop on heavy impacts (Cucchiaio CLANG!)
+      // Handle Reload Countdown & Animation
+      if (stateRef.current.reloading) {
+        stateRef.current.reloadTimer -= dt;
+        if (stateRef.current.reloadTimer <= 0) {
+          stateRef.current.reloading = false;
+          setIsReloading(false);
+          const spec = WEAPONS_ARSENAL.find((w) => w.id === stateRef.current.weaponId)!;
+          stateRef.current.ammo[spec.id] = spec.magSize;
+          setAmmoCounts({ ...stateRef.current.ammo });
+        }
+      }
+
       if (stateRef.current.hitstopTimer > 0) {
         stateRef.current.hitstopTimer -= dt;
         renderer.render(scene, camera);
@@ -742,31 +987,28 @@ export default function App() {
       }
 
       if (stateRef.current.phase === 'title') {
-        // Atmospheric live-world camera pan over the desk arena & stickman skirmish
-        const camAngle = elapsed * 0.22;
+        // Frame the Studio / Scrivania exactly like the attached screenshot!
+        camera.up.set(0, 1, 0);
         camera.position.set(
-          Math.sin(camAngle) * 19,
-          7.5 + Math.sin(elapsed * 0.6) * 1.2,
-          Math.cos(camAngle) * 19
+          -4.2 + Math.sin(elapsed * 0.4) * 0.8,
+          3.2,
+          1.4 + Math.cos(elapsed * 0.4) * 0.6
         );
-        camera.lookAt(0, 1.8, 0);
-        viewmodel.root.visible = false;
+        camera.rotation.set(-0.24, 0.44, 0, 'YXZ');
+        viewmodel.root.visible = true;
       } else if (stateRef.current.phase === 'playing') {
         viewmodel.root.visible = true;
 
-        // Keyboard look fallback (ArrowLeft / ArrowRight / Q / E)
-        if (heldKeys.has('ArrowLeft') || heldKeys.has('KeyQ')) player.yaw += 2.1 * dt;
+        if (heldKeys.has('ArrowLeft')) player.yaw += 2.1 * dt;
         if (heldKeys.has('ArrowRight')) player.yaw -= 2.1 * dt;
         if (heldKeys.has('ArrowUp')) player.pitch = Math.min(1.1, player.pitch + 1.5 * dt);
         if (heldKeys.has('ArrowDown')) player.pitch = Math.max(-1.1, player.pitch - 1.5 * dt);
 
-        // Blindness countdown (when hit by enemy Bianchetto)
         if (stateRef.current.blindTimer > 0) {
           stateRef.current.blindTimer = Math.max(0, stateRef.current.blindTimer - dt);
           setPlayerBlindTimer(stateRef.current.blindTimer);
         }
 
-        // Player Movement (blocked if glued by Tubetto di Colla!)
         _forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw)).normalize();
         _right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw)).normalize();
         _moveVec.set(0, 0, 0);
@@ -778,36 +1020,90 @@ export default function App() {
           if (heldKeys.has('KeyA')) _moveVec.sub(_right);
         }
 
+        // Sprint with [Shift] & Stamina management
+        const wantsSprint =
+          (heldKeys.has('ShiftLeft') || heldKeys.has('ShiftRight')) &&
+          _moveVec.lengthSq() > 0 &&
+          !stateRef.current.crouching &&
+          stateRef.current.stamina > 5;
+
+        if (wantsSprint) {
+          stateRef.current.stamina = Math.max(0, stateRef.current.stamina - 28 * dt);
+          setStamina(Math.round(stateRef.current.stamina));
+        } else if (stateRef.current.stamina < 100) {
+          stateRef.current.stamina = Math.min(100, stateRef.current.stamina + 18 * dt);
+          setStamina(Math.round(stateRef.current.stamina));
+        }
+
+        // Smooth FOV for Sniper Scope vs Sprint
+        const targetFov = stateRef.current.sniperAim ? 32 : wantsSprint ? 79 : 72;
+        if (Math.abs(camera.fov - targetFov) > 0.2) {
+          camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 12, dt);
+          camera.updateProjectionMatrix();
+        }
+
+        // Smooth Crouch Eye Height with [C]
+        const targetEye = stateRef.current.crouching ? 0.92 : 1.68;
+        player.eyeHeight = THREE.MathUtils.damp(player.eyeHeight, targetEye, 12, dt);
+
         if (_moveVec.lengthSq() > 0) {
           _moveVec.normalize();
-          player.walkCycle += dt * 11;
+          player.walkCycle += dt * (wantsSprint ? 15 : 11);
         }
 
-        // Check if standing in slippery Coffee Puddle on La Scrivania
-        let onCoffee = false;
-        if (
-          currentArena.coffeePuddleCenter &&
-          currentArena.coffeePuddleRadius &&
-          player.pos.distanceTo(currentArena.coffeePuddleCenter) < currentArena.coffeePuddleRadius
-        ) {
-          onCoffee = true;
+        // Check if standing in slippery Coffee Puddle or Soap
+        const onCoffee =
+          currentArena.coffeePuddleMesh.visible &&
+          player.pos.distanceTo(currentArena.coffeePuddleCenter) < currentArena.coffeePuddleRadius;
+        if (onCoffee) player.slipperyTimer = 0.6;
+        if (player.slipperyTimer > 0) player.slipperyTimer -= dt;
+
+        // Desk Fan Wind Force in Lo Studio
+        if (player.pos.distanceTo(currentArena.fanPosition) < 11 && player.pos.x > -22) {
+          player.vel.x += 12 * dt;
         }
 
-        const speed = onCoffee ? 15.5 : 10.5;
-        const damping = onCoffee ? 2.2 : 11.0;
-        player.vel.x = THREE.MathUtils.damp(player.vel.x, _moveVec.x * speed, damping, dt);
-        player.vel.z = THREE.MathUtils.damp(player.vel.z, _moveVec.z * speed, damping, dt);
-        player.vel.y -= 25.0 * dt; // Gravity
+        // Vacuum Cleaner Suction in Il Soggiorno
+        const distVac = player.pos.distanceTo(currentArena.vacuumPosition);
+        if (distVac < 8.5 && distVac > 1.8) {
+          _toTarget.subVectors(currentArena.vacuumPosition, player.pos).normalize();
+          player.vel.addScaledVector(_toTarget, 14 * dt);
+        }
+
+        const baseSpeed = stateRef.current.crouching
+          ? 6.2
+          : wantsSprint
+          ? 16.2
+          : player.slipperyTimer > 0
+          ? 16.5
+          : 10.5;
+        const damping = player.slipperyTimer > 0 ? 1.8 : 11.0;
+
+        player.vel.x = THREE.MathUtils.damp(player.vel.x, _moveVec.x * baseSpeed, damping, dt);
+        player.vel.z = THREE.MathUtils.damp(player.vel.z, _moveVec.z * baseSpeed, damping, dt);
+        player.vel.y -= 26.0 * dt;
 
         player.pos.addScaledVector(player.vel, dt);
+        player.pos.x = THREE.MathUtils.clamp(player.pos.x, -28.5, 28.5);
+        player.pos.z = THREE.MathUtils.clamp(player.pos.z, -28.5, 28.5);
 
-        // Arena Bounds & Platform/Book Collisions
-        player.pos.x = THREE.MathUtils.clamp(player.pos.x, -20.5, 20.5);
-        player.pos.z = THREE.MathUtils.clamp(player.pos.z, -20.5, 20.5);
+        // Update current room indicator based on quadrant
+        const newRoom: HouseRoom =
+          player.pos.z < 0
+            ? player.pos.x < 0
+              ? 'scrivania'
+              : 'bagno'
+            : player.pos.x < 0
+            ? 'cucina'
+            : 'soggiorno';
+        setCurrentRoom((prev) => (prev === newRoom ? prev : newRoom));
 
+        // Collisions & Interactive Bounce Pads (Toaster, Couch, Duck, Tape Measure, Mouse Trap, Soap)
         let floorHeight = 0;
         let hitBouncePad = false;
         let hitDuck = false;
+        let hitToaster = false;
+        let hitTrapLaunch = false;
 
         for (const box of currentArena.colliders) {
           if (
@@ -816,12 +1112,14 @@ export default function App() {
             player.pos.z > box.minZ - 0.45 &&
             player.pos.z < box.maxZ + 0.45
           ) {
-            if (player.pos.y >= box.topY - 0.65) {
+            if (player.pos.y >= box.topY - 0.7) {
               floorHeight = Math.max(floorHeight, box.topY);
               if (box.isBouncePad) hitBouncePad = true;
               if (box.isDuck) hitDuck = true;
+              if (box.isToaster) hitToaster = true;
+              if (box.isTapeTrap || box.isMouseTrap) hitTrapLaunch = true;
+              if (box.isSoap) player.slipperyTimer = 1.4;
             } else {
-              // Push out horizontally from book/cup sides
               if (player.pos.x < (box.minX + box.maxX) * 0.5) player.pos.x = box.minX - 0.45;
               else player.pos.x = box.maxX + 0.45;
             }
@@ -831,14 +1129,21 @@ export default function App() {
         if (player.pos.y <= floorHeight) {
           player.pos.y = floorHeight;
           if (hitBouncePad) {
-            player.vel.y = 14.5;
+            player.vel.y = hitToaster || hitTrapLaunch ? 19.5 : 15.0;
             player.grounded = false;
             if (hitDuck) {
               foleyAudio.playDuckSqueak();
-              triggerComicPop('SQUEAK! (Paperella)', '#facc15');
+              triggerComicPop('SQUEAK!');
+            } else if (hitToaster) {
+              foleyAudio.playWeaponFire('cucchiaio');
+              triggerComicPop('TOSTAPANE DING!');
+              setKillFeedMsg('TOSTAPANE: Catapultato in aria insieme alle fette di pane tostato!');
+            } else if (hitTrapLaunch) {
+              foleyAudio.playWeaponFire('molletta');
+              triggerComicPop('CLACK-ZIIIP!');
             } else {
               foleyAudio.playBoing(1);
-              triggerComicPop('BOING! (Spugna)', '#f472b6');
+              triggerComicPop('BOING!');
             }
           } else {
             player.vel.y = 0;
@@ -850,28 +1155,59 @@ export default function App() {
           player.coyoteTimer = Math.max(0, player.coyoteTimer - dt);
         }
 
-        // Check Paper Scrap Pickups (Reloads Cerbottana & Penna!)
+        // Collect Paper Pickups & Cork Helmet & Scavenger Weapon Crates
         currentArena.paperPickups.forEach((pMesh) => {
           pMesh.rotation.y += dt * 1.8;
-          if (pMesh.visible && player.pos.distanceTo(pMesh.position) < 1.65) {
+          if (pMesh.visible && player.pos.distanceTo(pMesh.position) < 1.8) {
             pMesh.visible = false;
             foleyAudio.playPaperPickup();
-            stateRef.current.ammo.cerbottana = Math.min(10, stateRef.current.ammo.cerbottana + 3);
-            stateRef.current.ammo.penna = Math.min(36, stateRef.current.ammo.penna + 8);
+            WEAPONS_ARSENAL.forEach((w) => {
+              if (w.magSize > 0) {
+                stateRef.current.ammo[w.id] = w.magSize;
+              }
+            });
             setAmmoCounts({ ...stateRef.current.ammo });
-            triggerComicPop('+3 CARTA PER CERBOTTANA!', '#38bdf8');
+            triggerComicPop('+MUNIZIONI CARTA!');
             window.setTimeout(() => {
               pMesh.visible = true;
-            }, 7000);
+            }, 8000);
           }
         });
 
-        // Spawn faint hand-drawn dotted ink trail behind Player's feet when running
+        // Cork Helmet ("Il Tappo di Sughero") in Kitchen
+        if (
+          currentArena.corkHelmetPickup.visible &&
+          player.pos.distanceTo(currentArena.corkHelmetPickup.position) < 1.8
+        ) {
+          currentArena.corkHelmetPickup.visible = false;
+          foleyAudio.playPaperPickup();
+          setHasCorkHelmet(true);
+          setKillFeedMsg('HAI INDOSSATO IL TAPPO DI SUGHERO COME ELMO DELLO STICKMAN!');
+        }
+
+        // Scavenger Weapon Crates
+        currentArena.weaponPickups.forEach((node) => {
+          node.mesh.rotation.y += dt * 1.6;
+          node.mesh.visible =
+            stateRef.current.arsenalMode === 'scavenger' && !node.collected;
+          if (node.mesh.visible && player.pos.distanceTo(node.position) < 1.9) {
+            node.collected = true;
+            node.mesh.visible = false;
+            stateRef.current.unlocked.add(node.weaponId);
+            setUnlockedWeapons(Array.from(stateRef.current.unlocked));
+            switchWeapon(node.weaponId);
+            foleyAudio.playReload();
+            const wSpec = WEAPONS_ARSENAL.find((w) => w.id === node.weaponId)!;
+            setKillFeedMsg(`TROVATA ARMA: ${wSpec.name}!`);
+          }
+        });
+
+        // Dotted Ink Footstep Trail for Player
         const horizSpeedSq = player.vel.x * player.vel.x + player.vel.z * player.vel.z;
         if (player.grounded && horizSpeedSq > 2.2) {
           player.stepTrailTimer -= dt;
           if (player.stepTrailTimer <= 0) {
-            player.stepTrailTimer = 0.11;
+            player.stepTrailTimer = wantsSprint ? 0.075 : 0.11;
             player.stepFootToggle = !player.stepFootToggle;
             const sideSign = player.stepFootToggle ? 0.22 : -0.22;
             const moveHeading = Math.atan2(player.vel.x, player.vel.z);
@@ -883,19 +1219,14 @@ export default function App() {
           }
         }
 
-        // Camera Position + Decaying Shake + Stepped 12 FPS Viewmodel Bob
+        // Camera & Per-Weapon Viewmodel Attack Animations
         stateRef.current.shakeIntensity = THREE.MathUtils.damp(
           stateRef.current.shakeIntensity,
           0,
           12,
           dt
         );
-        stateRef.current.recoilKick = THREE.MathUtils.damp(
-          stateRef.current.recoilKick,
-          0,
-          14,
-          dt
-        );
+        stateRef.current.attackAnimTimer = Math.max(0, stateRef.current.attackAnimTimer - dt);
 
         const steppedWalk = Math.floor(player.walkCycle * 12) / 12;
         const bobY = player.grounded ? Math.abs(Math.sin(steppedWalk)) * 0.065 : 0;
@@ -905,61 +1236,115 @@ export default function App() {
         camera.up.set(0, 1, 0);
         camera.position.set(
           player.pos.x + shakeX,
-          player.pos.y + 1.68 + bobY + shakeY,
+          player.pos.y + player.eyeHeight + bobY + shakeY,
           player.pos.z
         );
-        // Explicitly set z = 0 in YXZ order so title-screen lookAt never leaves the camera upside down!
-        camera.rotation.set(
-          player.pitch + stateRef.current.recoilKick * 0.09,
-          player.yaw,
-          0,
-          'YXZ'
-        );
+        camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
 
-        viewmodel.root.position.set(
-          Math.sin(steppedWalk * 0.5) * 0.025,
-          -0.34 - stateRef.current.recoilKick * 0.04,
-          -0.68 + stateRef.current.recoilKick * 0.11
-        );
+        // Distinct 3D Viewmodel Animations per Weapon Category!
+        const activeSpec = WEAPONS_ARSENAL.find((w) => w.id === stateRef.current.weaponId)!;
+        const animP = stateRef.current.attackAnimTimer / 0.28; // 1 -> 0 during attack
+        const reloadTilt = stateRef.current.reloading ? -0.65 : 0;
+
+        if (activeSpec.animType === 'swing_wide' || activeSpec.animType === 'heavy_smash') {
+          viewmodel.weaponPivot.rotation.set(
+            0.08 - Math.sin(animP * Math.PI) * 0.95 + reloadTilt,
+            -0.24 + Math.sin(animP * Math.PI) * 1.1,
+            0.04
+          );
+        } else if (activeSpec.animType === 'swing_fast') {
+          viewmodel.weaponPivot.rotation.set(
+            0.08 - Math.sin(animP * Math.PI) * 0.75,
+            -0.24 + Math.sin(animP * Math.PI) * 0.55,
+            0.04
+          );
+        } else if (activeSpec.animType === 'thrust') {
+          // Righello lunge thrust!
+          viewmodel.weaponPivot.position.set(
+            0.1,
+            0.04,
+            -0.06 - Math.sin(animP * Math.PI) * 0.36
+          );
+        } else {
+          viewmodel.weaponPivot.position.set(0.1, 0.04, -0.06 + animP * 0.09);
+          viewmodel.weaponPivot.rotation.set(0.08 + animP * 0.18 + reloadTilt, -0.24, 0.04);
+        }
       }
 
-      // Animate Floating Rubber Ducks in Il Bagno
-      currentArena.rubberDucks.forEach((duck, idx) => {
-        duck.position.y = 1.52 + Math.sin(elapsed * 2.5 + idx) * 0.12;
-        duck.rotation.z = Math.sin(elapsed * 1.8 + idx) * 0.08;
+      // Animate Environmental Chaos Props (Fan Blades, Swinging Lamp, Toaster Bread, Rolling Marble)
+      currentArena.fanBladesPivot.rotation.x += dt * 18;
+      currentArena.lampPivot.rotation.z = Math.sin(elapsed * 2.2) * 0.24;
+      currentArena.toastSlices.forEach((toast, idx) => {
+        toast.position.y = 3.1 + Math.abs(Math.sin(elapsed * 3.2 + idx)) * 2.4;
       });
 
-      // Animate Toilet Lid & Swirling Flush Vortex Combo in Il Bagno
-      if (stateRef.current.flushVortexTimer > 0 && currentArena.toiletBowlCenter) {
-        stateRef.current.flushVortexTimer -= dt;
-        if (currentArena.toiletLidPivot) {
-          currentArena.toiletLidPivot.rotation.x = THREE.MathUtils.damp(
-            currentArena.toiletLidPivot.rotation.x,
-            -Math.PI / 2.1,
-            8,
-            dt
-          );
-        }
-        if (currentArena.flushVortexMesh) {
-          currentArena.flushVortexMesh.visible = true;
-          currentArena.flushVortexMesh.rotation.y += dt * 14;
-        }
+      // Rolling Marble in Living Room
+      currentArena.rollingMarble.position.addScaledVector(currentArena.marbleVel, dt);
+      currentArena.rollingMarble.rotation.x += dt * 5;
+      if (currentArena.rollingMarble.position.x > 25 || currentArena.rollingMarble.position.x < 3) {
+        currentArena.marbleVel.x *= -1;
+      }
+      if (currentArena.rollingMarble.position.z > 25 || currentArena.rollingMarble.position.z < 3) {
+        currentArena.marbleVel.z *= -1;
+      }
 
-        // Pull all alive bots into the swirling toilet bowl!
+      currentArena.rubberDucks.forEach((duck, idx) => {
+        duck.position.y = 1.52 + Math.sin(elapsed * 2.5 + idx) * 0.12;
+      });
+
+      // Animate Boss 1: Il Padrone di Casa ("Domestic Chaos")
+      padroneBoss.group.visible = stateRef.current.bossMode === 'padrone';
+      if (padroneBoss.group.visible) {
+        _toTarget.subVectors(player.pos, padroneBoss.group.position).setY(0);
+        if (_toTarget.length() > 2.5) {
+          _toTarget.normalize();
+          padroneBoss.group.position.addScaledVector(_toTarget, 3.6 * dt);
+          padroneBoss.group.rotation.y = Math.atan2(_toTarget.x, _toTarget.z);
+        }
+        padroneBoss.broomPivot.rotation.y = Math.sin(elapsed * 5.5) * 0.85;
+      }
+
+      // Animate Boss 2: Il Gatto Disastro ("Cat-astrophe")
+      gattoBoss.group.visible = stateRef.current.bossMode === 'gatto';
+      if (gattoBoss.group.visible) {
+        const catTarget = stateRef.current.laserActive
+          ? stateRef.current.laserTargetPoint
+          : player.pos;
+        _toTarget.subVectors(catTarget, gattoBoss.group.position).setY(0);
+        if (_toTarget.length() > 1.8) {
+          _toTarget.normalize();
+          gattoBoss.group.position.addScaledVector(_toTarget, 6.8 * dt);
+          gattoBoss.group.rotation.y = Math.atan2(_toTarget.x, _toTarget.z);
+        }
+        gattoBoss.tailPivot.rotation.z = Math.sin(elapsed * 8) * 0.55;
+        gattoBoss.pawPivot.rotation.x = Math.sin(elapsed * 10) * 0.65;
+      }
+
+      // Toilet Flush Vortex Combo in Il Bagno
+      if (stateRef.current.flushVortexTimer > 0) {
+        stateRef.current.flushVortexTimer -= dt;
+        currentArena.toiletLidPivot.rotation.x = THREE.MathUtils.damp(
+          currentArena.toiletLidPivot.rotation.x,
+          -Math.PI / 2.1,
+          8,
+          dt
+        );
+        currentArena.flushVortexMesh.visible = true;
+        currentArena.flushVortexMesh.rotation.y += dt * 14;
+
         bots.forEach((bot) => {
           if (bot.state === 'alive') {
-            _toTarget.subVectors(currentArena.toiletBowlCenter!, bot.position);
+            _toTarget.subVectors(currentArena.toiletBowlCenter, bot.position);
             const dist = _toTarget.length();
-            if (dist < 17) {
+            if (dist < 19) {
               _toTarget.normalize();
-              bot.position.addScaledVector(_toTarget, 11.5 * dt);
+              bot.position.addScaledVector(_toTarget, 12.5 * dt);
               bot.rotationY += dt * 15;
-              if (dist < 2.6) {
+              if (dist < 2.8) {
                 bot.state = 'flushed';
                 bot.stateTimer = 2.0;
                 stateRef.current.score += 1;
                 setPlayerScore(stateRef.current.score);
-                triggerComicPop('FLUSH COMBO +1!', '#06b6d4');
               }
             }
           }
@@ -967,9 +1352,9 @@ export default function App() {
 
         if (stateRef.current.flushVortexTimer <= 0) {
           setFlushComboActive(false);
-          if (currentArena.flushVortexMesh) currentArena.flushVortexMesh.visible = false;
+          currentArena.flushVortexMesh.visible = false;
         }
-      } else if (currentArena.toiletLidPivot) {
+      } else {
         currentArena.toiletLidPivot.rotation.x = THREE.MathUtils.damp(
           currentArena.toiletLidPivot.rotation.x,
           0,
@@ -978,7 +1363,7 @@ export default function App() {
         );
       }
 
-      // Update Projectiles & Mid-Air Eraser Cancellation
+      // Update Projectiles, Ground Traps (Molletta/Spillatrice) & Recoverable Fork
       for (let i = 0; i < projectilePool.length; i++) {
         const p = projectilePool[i];
         if (!p.active) continue;
@@ -990,43 +1375,72 @@ export default function App() {
           continue;
         }
 
-        // Gravity on heavy/arced projectiles
+        // Recoverable Fork stuck in ground
+        if (p.isStuckFork) {
+          if (player.pos.distanceTo(p.position) < 2.0) {
+            p.active = false;
+            p.mesh.visible = false;
+            stateRef.current.ammo.forchetta = 1;
+            setAmmoCounts({ ...stateRef.current.ammo });
+            foleyAudio.playReload();
+            triggerComicPop('FORCHETTA RACCOLTA!');
+          }
+          continue;
+        }
+
+        // Armed Clothespin Trap ("Molletta") on floor
+        if (p.isGroundedTrap) {
+          for (const bot of bots) {
+            if (bot.state === 'alive' && bot.position.distanceTo(p.position) < 1.6) {
+              const spec = WEAPONS_ARSENAL.find((w) => w.id === 'molletta')!;
+              applyWeaponHitToBot(bot, spec, _forward);
+              foleyAudio.playWeaponFire('molletta');
+              p.active = false;
+              p.mesh.visible = false;
+              break;
+            }
+          }
+          continue;
+        }
+
         if (
           p.weaponId === 'gomma' ||
-          p.weaponId === 'colla' ||
-          p.weaponId === 'bianchetto' ||
-          p.weaponId === 'elastici'
+          p.weaponId === 'molletta' ||
+          p.weaponId === 'lampadina' ||
+          p.weaponId === 'pennarello'
         ) {
-          p.velocity.y -= 13.5 * dt;
+          p.velocity.y -= 14.0 * dt;
         }
 
         _projNext.copy(p.position).addScaledVector(p.velocity, dt);
 
-        // Floor & Wall Bounce for Elastici and Gomma da Cancellare
-        if (_projNext.y < 0.22) {
-          if (p.bouncesLeft > 0) {
-            p.bouncesLeft--;
-            p.bounceCount++;
-            _projNext.y = 0.22;
-            p.velocity.y = Math.abs(p.velocity.y) * 0.78;
-            if (p.weaponId === 'elastici') {
-              p.damage = Math.min(6, p.damage + 1); // Gains damage on bounce!
-              foleyAudio.playBoing(p.bounceCount);
-            }
-          } else {
+        if (_projNext.y < 0.24) {
+          if (p.weaponId === 'forchetta') {
+            p.position.copy(_projNext).setY(0.24);
+            p.isStuckFork = true;
+            continue;
+          }
+          if (p.weaponId === 'molletta') {
+            p.position.copy(_projNext).setY(0.2);
+            p.isGroundedTrap = true;
+            continue;
+          }
+          if (p.weaponId === 'pennarello') {
+            spawnInkSplat(_projNext.x, _projNext.z, 2.2);
+            damageBossPadrone(16, 'Hai imbrattato il pavimento col Pennarello Indelebile!');
             p.active = false;
             p.mesh.visible = false;
             continue;
           }
-        }
-
-        if (Math.abs(_projNext.x) > 21 || Math.abs(_projNext.z) > 21) {
           if (p.bouncesLeft > 0) {
             p.bouncesLeft--;
             p.bounceCount++;
-            if (Math.abs(_projNext.x) > 21) p.velocity.x *= -0.85;
-            if (Math.abs(_projNext.z) > 21) p.velocity.z *= -0.85;
+            _projNext.y = 0.24;
+            p.velocity.y = Math.abs(p.velocity.y) * 0.82;
             foleyAudio.playBoing(p.bounceCount);
+            if (p.weaponId === 'spillatrice' && stateRef.current.bossMode === 'padrone') {
+              damageBossPadrone(12, 'YOWCH! Il Padrone di Casa ha calpestato le spille!');
+            }
           } else {
             p.active = false;
             p.mesh.visible = false;
@@ -1036,7 +1450,7 @@ export default function App() {
 
         p.position.copy(_projNext);
 
-        // Special Mechanic: Gomma da Cancellare ERASES enemy projectiles in mid-air!
+        // Gomma da Cancellare erases enemy projectiles mid-air!
         if (p.weaponId === 'gomma' && p.fromPlayer) {
           for (let j = 0; j < projectilePool.length; j++) {
             const other = projectilePool[j];
@@ -1044,47 +1458,47 @@ export default function App() {
               other.active = false;
               other.mesh.visible = false;
               foleyAudio.playEraseProjectile();
-              triggerComicPop('PROIETTILE CANCELLATO!', '#a855f7');
+              triggerComicPop('COLPO CANCELLATO!');
             }
           }
         }
 
-        // Check projectile collision against Stickman Bots or Player
         if (p.fromPlayer) {
           for (const bot of bots) {
             if (bot.state !== 'alive') continue;
             const dx = p.position.x - bot.position.x;
             const dz = p.position.z - bot.position.z;
             const dy = p.position.y - (bot.position.y + 1.1);
-            if (dx * dx + dz * dz < 0.75 && Math.abs(dy) < 1.35) {
+            if (dx * dx + dz * dz < 0.85 && Math.abs(dy) < 1.4) {
               const spec = WEAPONS_ARSENAL.find((w) => w.id === p.weaponId)!;
               _toTarget.copy(p.velocity).setY(0).normalize();
               applyWeaponHitToBot(bot, spec, _toTarget);
-              p.active = false;
-              p.mesh.visible = false;
+              if (p.weaponId === 'forchetta') {
+                p.isStuckFork = true;
+                p.position.set(bot.position.x, 0.3, bot.position.z);
+              } else {
+                p.active = false;
+                p.mesh.visible = false;
+              }
               break;
             }
           }
         } else if (stateRef.current.phase === 'playing') {
-          // Bot projectile hitting Player
           const dx = p.position.x - player.pos.x;
           const dz = p.position.z - player.pos.z;
-          const dy = p.position.y - (player.pos.y + 1.2);
+          const dy = p.position.y - (player.pos.y + 1.1);
           if (dx * dx + dz * dz < 0.75 && Math.abs(dy) < 1.35) {
+            // Padella in Ghisa Shield Block!
+            if (stateRef.current.weaponId === 'padella') {
+              p.velocity.negate();
+              p.fromPlayer = true;
+              foleyAudio.playWeaponFire('padella');
+              triggerComicPop('PARATO CON PADELLA!');
+              continue;
+            }
             p.active = false;
             p.mesh.visible = false;
-            stateRef.current.shakeIntensity = 0.16;
-
-            if (p.weaponId === 'colla') {
-              stateRef.current.gluedMashesRemaining = 4;
-              setPlayerGluedCount(4);
-              triggerComicPop('INCOLLATO! PREMI SPAZIO x4!', '#f59e0b');
-            } else if (p.weaponId === 'bianchetto') {
-              stateRef.current.blindTimer = 2.0;
-              setPlayerBlindTimer(2.0);
-              triggerComicPop('ACCECATO DAL BIANCHETTO!', '#ec4899');
-            }
-
+            stateRef.current.shakeIntensity = 0.15;
             stateRef.current.hp = Math.max(0, stateRef.current.hp - 1);
             setPlayerHp(stateRef.current.hp);
             if (stateRef.current.hp <= 0) {
@@ -1092,14 +1506,13 @@ export default function App() {
               setBotScore(stateRef.current.botScore);
               stateRef.current.hp = 6;
               setPlayerHp(6);
-              player.pos.set(0, 0, 14.5);
-              triggerComicPop('SCARABOCCHIATO! RESPAWN!', '#ef4444');
+              player.pos.set(-4.5, 0, -1.2);
             }
           }
         }
       }
 
-      // Update Stickman Bots (Stepped 12 FPS Flipbook Animation + Ragdoll States)
+      // Update Stickman Bots + Dotted Footstep Ink Trail
       const quantizedTime12 = Math.floor(elapsed * 12) / 12;
 
       bots.forEach((bot, idx) => {
@@ -1113,19 +1526,14 @@ export default function App() {
             if (bot.blindedTimer <= 0) bot.whiteoutSplat.visible = false;
           }
 
-          // AI Steering toward player or wandering if blinded
-          _toTarget.subVectors(player.pos, bot.position);
-          _toTarget.y = 0;
+          _toTarget.subVectors(player.pos, bot.position).setY(0);
           const distToPlayer = _toTarget.length();
-
-          if (bot.blindedTimer > 0) {
-            bot.rotationY += dt * 6;
-          } else if (distToPlayer > 0.1) {
+          if (distToPlayer > 0.1) {
             bot.rotationY = Math.atan2(_toTarget.x, _toTarget.z);
           }
 
-          const moveSpeed = bot.gluedTimer > 0 ? 0 : distToPlayer > 6.5 ? 4.2 : 1.8;
-          const strafeAngle = bot.rotationY + (distToPlayer <= 6.5 ? Math.PI / 2 : 0);
+          const moveSpeed = bot.gluedTimer > 0 ? 0 : distToPlayer > 7.5 ? 4.4 : 2.1;
+          const strafeAngle = bot.rotationY + (distToPlayer <= 7.5 ? Math.PI / 2 : 0);
           bot.velocity.x = THREE.MathUtils.damp(
             bot.velocity.x,
             Math.sin(strafeAngle) * moveSpeed,
@@ -1140,11 +1548,10 @@ export default function App() {
           );
 
           bot.position.addScaledVector(bot.velocity, dt);
-          bot.position.x = THREE.MathUtils.clamp(bot.position.x, -19, 19);
-          bot.position.z = THREE.MathUtils.clamp(bot.position.z, -19, 19);
+          bot.position.x = THREE.MathUtils.clamp(bot.position.x, -26, 26);
+          bot.position.z = THREE.MathUtils.clamp(bot.position.z, -26, 26);
           bot.group.rotation.y = bot.rotationY;
 
-          // Stepped 12 FPS Flipbook Limb Animation
           const swing =
             bot.gluedTimer > 0 ? 0 : Math.sin(quantizedTime12 * 14 + idx * 1.7) * 0.78;
           bot.leftLeg.rotation.x = swing;
@@ -1152,7 +1559,6 @@ export default function App() {
           bot.leftArm.rotation.x = -swing * 0.65;
           bot.rightArm.rotation.x = swing * 0.45;
 
-          // Emit faint hand-drawn dotted ink trail behind moving Stickman's white sneakers
           const botSpeedSq =
             bot.velocity.x * bot.velocity.x + bot.velocity.z * bot.velocity.z;
           if (bot.gluedTimer <= 0 && botSpeedSq > 0.65) {
@@ -1174,84 +1580,48 @@ export default function App() {
             }
           }
 
-          // Bot fires occasional stationery shots (Penna / Colla / Bianchetto)
           if (stateRef.current.phase === 'playing' && bot.blindedTimer <= 0) {
             bot.shootCooldown -= dt;
             if (bot.shootCooldown <= 0 && distToPlayer < 22) {
-              bot.shootCooldown = 2.4 + Math.random() * 1.8;
+              bot.shootCooldown = 2.6 + Math.random() * 2.0;
               const botProj = projectilePool.find((p) => !p.active);
               if (botProj) {
-                const botWeaponPool: WeaponId[] = ['penna', 'colla', 'bianchetto', 'elastici'];
-                const chosenW = botWeaponPool[idx % botWeaponPool.length];
-                const spec = WEAPONS_ARSENAL.find((w) => w.id === chosenW)!;
                 botProj.active = true;
                 botProj.fromPlayer = false;
-                botProj.weaponId = chosenW;
+                botProj.weaponId = 'penna_scatto';
                 botProj.damage = 1;
-                botProj.life = 3.5;
-                botProj.bouncesLeft = chosenW === 'elastici' ? 2 : 0;
+                botProj.life = 3.2;
+                botProj.bouncesLeft = 0;
+                botProj.isGroundedTrap = false;
+                botProj.isStuckFork = false;
                 botProj.position.copy(bot.position).setY(1.45);
-                _toTarget.subVectors(player.pos, bot.position).setY(0.15).normalize();
-                botProj.velocity.copy(_toTarget).multiplyScalar(19);
-                (botProj.mesh.material as THREE.MeshStandardMaterial).color.set(
-                  spec.accentColor
-                );
-                botProj.mesh.scale.setScalar(1.05);
+                _toTarget.subVectors(player.pos, bot.position).setY(0.1).normalize();
+                botProj.velocity.copy(_toTarget).multiplyScalar(18);
+                (botProj.mesh.material as THREE.MeshStandardMaterial).color.set('#3b82f6');
+                botProj.mesh.scale.setScalar(1.0);
                 botProj.mesh.visible = true;
               }
             }
           }
-        } else if (bot.state === 'sliced') {
-          // Taglierino 2-piece dismemberment physics: Upper torso flies off, legs keep running!
+        } else {
           bot.stateTimer -= dt;
-          bot.upperVel.y -= 19 * dt;
-          bot.upperGroup.position.addScaledVector(bot.upperVel, dt * 0.45);
-          bot.upperGroup.rotation.x += dt * 9;
-          bot.upperGroup.rotation.z += dt * 6;
-          if (bot.upperGroup.position.y < 0.25) {
-            bot.upperGroup.position.y = 0.25;
-            bot.upperVel.multiplyScalar(0.5);
-          }
-          // Lower legs keep pedaling comically for 1.2s
-          const franticSwing = Math.sin(quantizedTime12 * 26) * 0.95;
-          bot.leftLeg.rotation.x = franticSwing;
-          bot.rightLeg.rotation.x = -franticSwing;
-
-          if (bot.stateTimer <= 0) respawnBot(bot);
-        } else if (bot.state === 'decapitated') {
-          // Forbici decapitation: spherical head rolls and bounces like a ball!
-          bot.stateTimer -= dt;
-          bot.headVel.y -= 20 * dt;
-          bot.headGroup.position.addScaledVector(bot.headVel, dt * 0.5);
-          bot.headGroup.rotation.x += dt * 14;
-          if (bot.headGroup.position.y < -0.85) {
-            bot.headGroup.position.y = -0.85;
-            bot.headVel.y = Math.abs(bot.headVel.y) * 0.65;
-          }
-          bot.upperGroup.rotation.z = THREE.MathUtils.damp(
-            bot.upperGroup.rotation.z,
-            Math.PI / 2.2,
-            6,
-            dt
-          );
-          if (bot.stateTimer <= 0) respawnBot(bot);
-        } else if (bot.state === 'ragdoll' || bot.state === 'flushed') {
-          bot.stateTimer -= dt;
-          if (bot.state === 'flushed') {
-            bot.group.rotation.y += dt * 22;
-            bot.group.position.y -= dt * 2.5;
+          if (bot.state === 'sliced') {
+            bot.upperVel.y -= 19 * dt;
+            bot.upperGroup.position.addScaledVector(bot.upperVel, dt * 0.45);
+            bot.upperGroup.rotation.x += dt * 9;
+          } else if (bot.state === 'electrocuted') {
+            bot.group.position.x += Math.sin(elapsed * 55) * 0.12;
           } else {
             bot.position.addScaledVector(bot.upperVel, dt * 0.45);
             bot.upperVel.y -= 22 * dt;
             bot.group.rotation.x += dt * 10;
-            bot.group.rotation.z += dt * 7;
           }
           if (bot.stateTimer <= 0) respawnBot(bot);
         }
       });
 
-      // Update & Fade Hand-Drawn Dotted Ink Footstep Trail Particles
-      const steppedScaleJitter = (Math.floor(elapsed * 12) % 2 === 0 ? 1.0 : 0.94);
+      // Update Dotted Ink Footstep Particles
+      const steppedScaleJitter = Math.floor(elapsed * 12) % 2 === 0 ? 1.0 : 0.94;
       for (let i = 0; i < inkTrailPool.length; i++) {
         const pt = inkTrailPool[i];
         if (!pt.active) continue;
@@ -1261,7 +1631,7 @@ export default function App() {
           pt.mesh.visible = false;
           continue;
         }
-        const progress = pt.life / pt.maxLife; // 1 -> 0
+        const progress = pt.life / pt.maxLife;
         pt.mat.opacity = progress * 0.48;
         pt.mesh.scale.setScalar(
           pt.baseScale * (1.0 + (1.0 - progress) * 0.28) * steppedScaleJitter
@@ -1293,45 +1663,28 @@ export default function App() {
     matchSeconds % 60
   ).padStart(2, '0')}`;
 
-  const handleSelectMap = (mId: 'scrivania' | 'bagno') => {
-    stateRef.current.mapId = mId;
-    stateRef.current.rebuildMapRequested = true;
-    setActiveMap(mId);
-  };
-
-  const handleSelectWeapon = (wId: WeaponId) => {
-    stateRef.current.weaponId = wId;
-    setActiveWeaponId(wId);
-  };
-
-  const handleToggleMute = () => {
-    foleyAudio.muted = !isMuted;
-    setIsMuted(!isMuted);
+  const handleTeleportRoom = (room: HouseRoom) => {
+    stateRef.current.teleportRoomRequested = room;
+    setCurrentRoom(room);
   };
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#f4efe1] select-none">
-      {/* 1. Dedicated Isolated WebGL Canvas Container */}
+      {/* 1. Dedicated WebGL Canvas Container */}
       <div ref={canvasMountRef} className="absolute inset-0 w-full h-full" />
 
-      {/* 2. Fixed First-Person Paper Grain & Torn Notebook Frame Overlay (pointer-events-none) */}
-      <div
-        className="absolute inset-0 pointer-events-none z-10"
-        style={{
-          boxShadow: 'inset 0 0 0 6px #18181b, inset 0 0 48px rgba(24, 24, 20, 0.22)',
-        }}
-      />
-
-      {/* 3. Bianchetto (Correction Fluid) Whiteout Blindness Overlay when hit */}
-      {playerBlindTimer > 0 && (
-        <div className="absolute inset-0 pointer-events-none z-20 flex items-center justify-center bg-white/90">
-          <div className="text-center font-hand text-3xl font-bold text-zinc-900">
-            SPLASH! BIANCHETTO IN FACCIA ({playerBlindTimer.toFixed(1)}s)
+      {/* 2. Penna Blu Bic Transparent Barrel Optical Scope Overlay */}
+      {isSniperAiming && gamePhase === 'playing' && (
+        <div className="absolute inset-0 pointer-events-none z-15 flex items-center justify-center">
+          <div className="w-[460px] h-[460px] rounded-full border-8 border-blue-900/70 bg-sky-100/15 flex items-center justify-center shadow-[0_0_0_9999px_rgba(15,23,42,0.55)]">
+            <div className="text-xs font-mono-code text-blue-950 absolute top-6 font-bold">
+              MIRINO OTTICO PENNA BLU BIC · TUBO INCHIOSTRO
+            </div>
           </div>
         </div>
       )}
 
-      {/* 4. Discreet Peripheral Comic Foley Onomatopoeia Popups (Non-Intrusive) */}
+      {/* 3. Discreet Peripheral Comic Foley Popups */}
       <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
         {comicPops.map((pop) => (
           <div
@@ -1344,237 +1697,344 @@ export default function App() {
         ))}
       </div>
 
-      {/* 5. Hand-Drawn Sketch Crosshair & Glued Button-Mash Prompt (During Active Gameplay) */}
+      {/* 4. Exact Hand-Drawn Crosshair from Reference Screenshot */}
       {gamePhase === 'playing' && (
         <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
-          <svg width="54" height="54" viewBox="0 0 54 54" className="opacity-90">
+          <svg width="68" height="68" viewBox="0 0 68 68">
             <circle
-              cx="27"
-              cy="27"
-              r="14"
+              cx="34"
+              cy="34"
+              r="18"
               fill="none"
               stroke="#141413"
-              strokeWidth="2.4"
-              strokeDasharray="18 3"
+              strokeWidth="2.6"
             />
-            <line x1="27" y1="4" x2="27" y2="19" stroke="#141413" strokeWidth="2.4" />
-            <line x1="27" y1="35" x2="27" y2="50" stroke="#141413" strokeWidth="2.4" />
-            <line x1="4" y1="27" x2="19" y2="27" stroke="#141413" strokeWidth="2.4" />
-            <line x1="35" y1="27" x2="50" y2="27" stroke="#141413" strokeWidth="2.4" />
-            <circle cx="27" cy="27" r="2" fill="#141413" />
+            <line x1="34" y1="3" x2="34" y2="23" stroke="#141413" strokeWidth="2.6" />
+            <line x1="34" y1="45" x2="34" y2="65" stroke="#141413" strokeWidth="2.6" />
+            <line x1="3" y1="34" x2="23" y2="34" stroke="#141413" strokeWidth="2.6" />
+            <line x1="45" y1="34" x2="65" y2="34" stroke="#141413" strokeWidth="2.6" />
+            <line x1="30" y1="34" x2="38" y2="34" stroke="#141413" strokeWidth="2.2" />
+            <line x1="34" y1="30" x2="34" y2="38" stroke="#141413" strokeWidth="2.2" />
           </svg>
-
-          {playerGluedCount > 0 && (
-            <div className="absolute mt-28 px-4 py-2 sketch-box bg-amber-300 text-zinc-950 font-hand font-bold text-xl">
-              PIEDI INCOLLATI! Premi [SPAZIO] x{playerGluedCount} per liberarti!
-            </div>
-          )}
         </div>
       )}
 
-      {/* 6. Perimeter Marker-Drawn HUD (Directly faithful to Concept Art Screenshot) */}
+      {/* 5. SCREENSHOT-IDENTICAL TOP HUD (P1 Torn Strip, 02:14 Torn Card, P2 Torn Strip + Temperino Tag) */}
       <div className="absolute inset-x-0 top-0 p-3 md:p-4 flex items-start justify-between pointer-events-none z-20">
-        {/* Top-Left: P1 Stickman Badge & Score Bar */}
-        <div className="sketch-box-sm px-3.5 py-2 flex items-center gap-3 pointer-events-auto">
-          <div className="w-8 h-8 rounded-full bg-zinc-900 border-2 border-zinc-950 flex items-center justify-center text-white font-hand font-bold text-sm">
-            P1
+        {/* Top-Left: P1 Torn Paper Strip with Charcoal Sphere & Red/Graphite Pencil Bar */}
+        <div className="sketch-box-sm px-3 py-2 bg-[#f5f2e8] flex items-center gap-2.5 pointer-events-auto">
+          <div className="flex flex-col items-center">
+            <div
+              className="w-7 h-7 rounded-full border-2 border-zinc-950"
+              style={{
+                background: 'radial-gradient(circle at 32% 30%, #71717a, #18181b 70%)',
+              }}
+            />
+            <span className="font-hand font-bold text-base leading-none text-zinc-950 mt-0.5">
+              P1
+            </span>
           </div>
-          <div>
-            <div className="text-xs font-mono-code text-zinc-600">
-              TU (STICKMAN) · FRAG: <span className="font-bold text-zinc-950 tabular-nums">{playerScore}</span>
-            </div>
-            {/* Hand-drawn marker health/stamina bar */}
-            <div className="w-32 md:w-40 h-3.5 bg-zinc-800 border-2 border-zinc-950 rounded-sm overflow-hidden mt-0.5">
+          <div className="flex flex-col gap-1">
+            <div className="w-36 md:w-44 h-5 border-2 border-zinc-950 bg-[#52525b] overflow-hidden relative">
               <div
-                className="h-full bg-rose-500 transition-all duration-150"
+                className="h-full bg-[#f87171] border-r-2 border-zinc-950 transition-all duration-150"
                 style={{ width: `${(playerHp / 6) * 100}%` }}
               />
             </div>
+            <div className="text-[11px] font-hand font-bold text-zinc-800">
+              Stanza: {currentRoom.toUpperCase()} {hasCorkHelmet ? '· Elmo Sughero' : ''}
+            </div>
           </div>
         </div>
 
-        {/* Top-Center: Hand-Drawn Comic Timer Box ("02:14") + Map Indicator */}
+        {/* Top-Center: Torn Paper Timer Card ("02:14") + Active Boss Meter */}
         <div className="flex flex-col items-center gap-1.5 pointer-events-auto">
-          <div className="sketch-box px-5 py-1.5 bg-[#fbf9f3]">
-            <span className="font-hand font-bold text-3xl md:text-4xl tracking-wider text-zinc-950 tabular-nums">
+          <div className="sketch-box px-5 py-1 bg-[#f5f2e8]">
+            <span
+              className="font-hand font-bold text-3xl md:text-4xl tracking-wider text-zinc-950 tabular-nums"
+              style={{
+                textShadow: '1px 1px 0px #ffffff, -1px -1px 0px #ffffff',
+              }}
+            >
               {formattedTimer}
             </span>
           </div>
-          <div className="text-xs font-hand font-bold text-zinc-800 bg-[#fbf9f3]/90 px-2.5 py-0.5 border border-zinc-900 rounded">
-            {activeMap === 'scrivania' ? 'Mappa: La Scrivania' : 'Mappa: Il Bagno (Premi E per Sciacquone!)'}
-          </div>
-        </div>
 
-        {/* Top-Right: P2 / Bot Squad Status & GDD Shortcut */}
-        <div className="flex items-center gap-2.5 pointer-events-auto">
-          <button
-            onClick={() => setGddOpen(true)}
-            className="sketch-box-sm px-3.5 py-2 bg-amber-300 hover:bg-amber-400 text-zinc-950 font-hand font-bold text-sm cursor-pointer whitespace-nowrap shrink-0"
-          >
-            Apri GDD & Shader Lab
-          </button>
-
-          <div className="sketch-box-sm px-3.5 py-2 hidden sm:flex items-center gap-3">
-            <div className="text-right">
-              <div className="text-xs font-mono-code text-zinc-600">
-                BOT SQUAD · FRAG: <span className="font-bold text-zinc-950 tabular-nums">{botScore}</span>
-              </div>
-              <div className="w-28 h-3.5 bg-zinc-800 border-2 border-zinc-950 rounded-sm overflow-hidden mt-0.5">
-                <div className="h-full bg-amber-400 w-3/4" />
+          {bossMode !== 'none' && (
+            <div className="sketch-box-sm px-3 py-1 bg-amber-100 flex items-center gap-2">
+              <span className="text-xs font-hand font-bold text-zinc-950">
+                {bossMode === 'padrone'
+                  ? `Pazienza Padrone: ${bossMeter}%`
+                  : `Caos Gatto (Gomitolo): ${bossMeter}%`}
+              </span>
+              <div className="w-28 h-3 border border-zinc-900 bg-white overflow-hidden">
+                <div
+                  className={`h-full ${
+                    bossMode === 'padrone' ? 'bg-rose-500' : 'bg-amber-400'
+                  }`}
+                  style={{ width: `${bossMeter}%` }}
+                />
               </div>
             </div>
-            <div className="w-8 h-8 rounded-full bg-zinc-900 border-2 border-zinc-950 flex items-center justify-center text-amber-300 font-hand font-bold text-sm">
-              BOT
+          )}
+        </div>
+
+        {/* Top-Right: P2 Torn Paper Strip + Pencil Sharpener ("Temperino") Tag & GDD Button */}
+        <div className="flex items-start gap-2.5 pointer-events-auto">
+          <button
+            onClick={() => setGddOpen(true)}
+            className="sketch-box-sm px-3 py-2 bg-amber-300 hover:bg-amber-400 text-zinc-950 font-hand font-bold text-xs md:text-sm cursor-pointer whitespace-nowrap shrink-0"
+          >
+            GDD & 17 Armi
+          </button>
+
+          <div className="flex flex-col items-end">
+            <div className="sketch-box-sm px-3 py-2 bg-[#f5f2e8] hidden sm:flex items-center gap-2.5">
+              <div className="w-36 md:w-44 h-5 border-2 border-zinc-950 bg-[#52525b] overflow-hidden flex justify-end">
+                <div className="h-full bg-[#fde047] border-l-2 border-zinc-950 w-1/3" />
+              </div>
+              <div className="flex flex-col items-center">
+                <div
+                  className="w-7 h-7 rounded-full border-2 border-zinc-950"
+                  style={{
+                    background: 'radial-gradient(circle at 32% 30%, #71717a, #18181b 70%)',
+                  }}
+                />
+                <span className="font-hand font-bold text-base leading-none text-zinc-950 mt-0.5">
+                  P2
+                </span>
+              </div>
+            </div>
+
+            {/* Iconic Hand-Drawn Pencil Sharpener ("Temperino") Tag hanging under P2 (from screenshot!) */}
+            <div className="hidden sm:flex items-center gap-1.5 sketch-box-sm px-2.5 py-1 bg-[#f5f2e8] -mt-1 mr-8 rotate-[-4deg]">
+              <svg width="26" height="18" viewBox="0 0 26 18">
+                <rect
+                  x="2"
+                  y="2"
+                  width="22"
+                  height="14"
+                  rx="2"
+                  fill="#d4d4d8"
+                  stroke="#141413"
+                  strokeWidth="2"
+                />
+                <rect
+                  x="6"
+                  y="5"
+                  width="14"
+                  height="8"
+                  fill="#71717a"
+                  stroke="#141413"
+                  strokeWidth="1.5"
+                />
+                <circle cx="13" cy="9" r="2" fill="#141413" />
+              </svg>
+              <span className="text-[11px] font-hand font-bold text-zinc-900 tabular-nums">
+                {playerScore} - {botScore}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 7. Bottom-Left & Bottom-Right Marker Hearts & Active Weapon Comic Box */}
-      {gamePhase === 'playing' && (
-        <>
-          {/* Bottom-Left: 3 Red Marker Hearts (crossed out with a black X when damaged!) */}
-          <div className="absolute bottom-20 left-4 z-20 pointer-events-none flex flex-col gap-1.5">
-            <div className="sketch-box-sm px-3.5 py-2 bg-[#bbf7d0] flex items-center gap-2.5">
-              {[0, 1, 2].map((heartIdx) => {
-                const heartHp = Math.max(0, Math.min(2, playerHp - heartIdx * 2));
-                const isDeadHeart = heartHp === 0;
-                return (
-                  <div key={heartIdx} className="relative w-8 h-8 flex items-center justify-center">
-                    <svg viewBox="0 0 32 32" className="w-8 h-8">
-                      <path
-                        d="M16 28 C16 28 4 20 4 11 C4 6.5 7.5 4 11 4 C13.5 4 15 5.5 16 7.5 C17 5.5 18.5 4 21 4 C24.5 4 28 6.5 28 11 C28 20 16 28 16 28 Z"
-                        fill={heartHp === 2 ? '#ef4444' : heartHp === 1 ? '#fca5a5' : '#e5e7eb'}
-                        stroke="#141413"
-                        strokeWidth="2.5"
-                      />
-                    </svg>
-                    {/* Black Marker X over depleted hearts (Requirement §6) */}
-                    {isDeadHeart && (
-                      <svg viewBox="0 0 32 32" className="absolute inset-0 w-8 h-8">
-                        <line x1="5" y1="5" x2="27" y2="27" stroke="#141413" strokeWidth="4" strokeLinecap="round" />
-                        <line x1="27" y1="5" x2="5" y2="27" stroke="#141413" strokeWidth="4" strokeLinecap="round" />
-                      </svg>
-                    )}
-                  </div>
-                );
-              })}
-              <span className="font-hand font-bold text-sm text-zinc-900 ml-1 tabular-nums">
-                {playerHp}/6 HP
-              </span>
-            </div>
+      {/* 6. SCREENSHOT-IDENTICAL BOTTOM-LEFT & BOTTOM-RIGHT HEARTS + PAWN BARS */}
+      <div className="absolute bottom-16 left-3 z-20 pointer-events-none flex flex-col gap-1.5">
+        {/* Green Pencil Box with 3 Red Hearts */}
+        <div className="sketch-box-sm px-3 py-1.5 bg-[#86efac] flex items-center gap-2 w-fit">
+          {[0, 1, 2].map((heartIdx) => {
+            const heartHp = Math.max(0, Math.min(2, playerHp - heartIdx * 2));
+            return (
+              <div key={heartIdx} className="relative w-6 h-6">
+                <svg viewBox="0 0 32 32" className="w-6 h-6">
+                  <path
+                    d="M16 28 C16 28 4 20 4 11 C4 6.5 7.5 4 11 4 C13.5 4 15 5.5 16 7.5 C17 5.5 18.5 4 21 4 C24.5 4 28 6.5 28 11 C28 20 16 28 16 28 Z"
+                    fill={heartHp > 0 ? '#ef4444' : '#d4d4d8'}
+                    stroke="#141413"
+                    strokeWidth="2.8"
+                  />
+                </svg>
+                {heartHp === 0 && (
+                  <svg viewBox="0 0 32 32" className="absolute inset-0 w-6 h-6">
+                    <line x1="5" y1="5" x2="27" y2="27" stroke="#141413" strokeWidth="4" />
+                    <line x1="27" y1="5" x2="5" y2="27" stroke="#141413" strokeWidth="4" />
+                  </svg>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
-            <div className="text-xs font-hand font-bold text-zinc-800 bg-[#fbf9f3]/90 px-2.5 py-1 border border-zinc-900 rounded max-w-xs truncate">
-              {killFeedMsg}
+        {/* Bottom-Left Stickman Pawn + Green Stamina / Sprint Bar (from screenshot!) */}
+        <div className="sketch-box-sm px-2.5 py-1 bg-[#fbf9f3] flex items-center gap-2 w-48 md:w-56">
+          <div className="w-6 h-6 rounded-full bg-zinc-900 border-2 border-zinc-950 shrink-0" />
+          <div className="flex-1 h-4 bg-zinc-200 border border-zinc-800 overflow-hidden">
+            <div
+              className="h-full bg-[#86efac] transition-all duration-100"
+              style={{ width: `${stamina}%` }}
+            />
+          </div>
+          <span className="text-[11px] font-hand font-bold text-zinc-900">
+            {isCrouching ? 'ACCOV.' : 'SCATTO'}
+          </span>
+        </div>
+
+        <div className="text-xs font-hand font-bold text-zinc-900 bg-[#fbf9f3]/90 px-2.5 py-0.5 border border-zinc-900 rounded max-w-xs truncate">
+          {killFeedMsg}
+        </div>
+      </div>
+
+      {/* Bottom-Right: Orange Pencil Box with 3 Hearts + Pink Ammo Bar with Right Stickman Pawn (from screenshot!) */}
+      <div className="absolute bottom-16 right-3 z-20 pointer-events-none flex flex-col items-end gap-1.5">
+        <div className="sketch-box-sm px-3 py-1.5 bg-[#fdba74] flex items-center gap-2 w-fit">
+          {[0, 1, 2].map((idx) => (
+            <svg key={idx} viewBox="0 0 32 32" className="w-6 h-6">
+              <path
+                d="M16 28 C16 28 4 20 4 11 C4 6.5 7.5 4 11 4 C13.5 4 15 5.5 16 7.5 C17 5.5 18.5 4 21 4 C24.5 4 28 6.5 28 11 C28 20 16 28 16 28 Z"
+                fill="#ef4444"
+                stroke="#141413"
+                strokeWidth="2.8"
+              />
+            </svg>
+          ))}
+        </div>
+
+        <div className="sketch-box-sm px-2.5 py-1 bg-[#fbf9f3] flex items-center gap-2 w-52 md:w-64">
+          <div className="flex-1 text-left">
+            <div className="text-[11px] font-hand font-bold text-zinc-950 truncate">
+              [{currentWeaponSpec.keyLabel}] {currentWeaponSpec.name}
+            </div>
+            <div className="h-3.5 bg-zinc-200 border border-zinc-800 overflow-hidden mt-0.5">
+              <div
+                className="h-full bg-[#fda4af] transition-all duration-150"
+                style={{
+                  width:
+                    currentWeaponSpec.magSize === -1
+                      ? '100%'
+                      : `${(ammoCounts[activeWeaponId] / currentWeaponSpec.magSize) * 100}%`,
+                }}
+              />
             </div>
           </div>
-
-          {/* Bottom-Right: Comic Ammo Readout & Active Stationery Weapon */}
-          <div className="absolute bottom-20 right-4 z-20 pointer-events-none flex flex-col items-end gap-1.5">
-            <div className="sketch-box-sm px-4 py-2 bg-[#fed7aa] flex items-center gap-3">
-              <div>
-                <div className="text-xs font-mono-code text-zinc-700">
-                  ARMA [{currentWeaponSpec.keyNum}] · {currentWeaponSpec.foleyOnomatopoeia}
-                </div>
-                <div className="font-hand font-bold text-lg text-zinc-950">
-                  {currentWeaponSpec.name}
-                </div>
-              </div>
-              <div className="pl-3 border-l-2 border-zinc-900 text-right">
-                <div className="text-xs font-mono-code text-zinc-700">COLPI</div>
-                <div className="font-hand font-bold text-2xl text-zinc-950 tabular-nums">
-                  {ammoCounts[activeWeaponId] === -1 ? '∞' : ammoCounts[activeWeaponId]}
-                </div>
-              </div>
-            </div>
+          <div className="font-hand font-bold text-base text-zinc-950 tabular-nums">
+            {isReloading
+              ? 'RIC...'
+              : ammoCounts[activeWeaponId] === -1
+              ? '∞'
+              : `${ammoCounts[activeWeaponId]}/${currentWeaponSpec.magSize}`}
           </div>
-        </>
-      )}
+          <div className="w-6 h-6 rounded-full bg-zinc-900 border-2 border-zinc-950 shrink-0" />
+        </div>
+      </div>
 
-      {/* 8. Unified Collapsible Bottom Control Dock (Three.js Skill §5: Zero Viewport Occlusion) */}
+      {/* 7. Unified Collapsible Bottom Control Dock (17 Weapons + 4 Rooms + Arsenal Mode + Boss Mode) */}
       <div
-        className={`fixed left-1/2 -translate-x-1/2 bottom-3 z-30 w-full max-w-[min(940px,95vw)] transition-transform duration-200 pointer-events-auto ${
-          dockCollapsed ? 'translate-y-[calc(100%-28px)]' : 'translate-y-0'
+        className={`fixed left-1/2 -translate-x-1/2 bottom-2 z-30 w-full max-w-[min(1080px,97vw)] transition-transform duration-200 pointer-events-auto ${
+          dockCollapsed ? 'translate-y-[calc(100%-26px)]' : 'translate-y-0'
         }`}
       >
         <div className="flex justify-center">
           <button
             onClick={() => setDockCollapsed(!dockCollapsed)}
-            className="px-3.5 py-1 text-xs font-hand font-bold bg-zinc-900 text-amber-200 rounded-t-md border-t-2 border-x-2 border-zinc-950 cursor-pointer whitespace-nowrap"
+            className="px-3.5 py-0.5 text-xs font-hand font-bold bg-zinc-900 text-amber-200 rounded-t-md border-t-2 border-x-2 border-zinc-950 cursor-pointer whitespace-nowrap"
           >
-            {dockCollapsed ? '▴ Mostra Arsenale & Controlli (H)' : '▾ Nascondi Arsenale (Zen Mode · H)'}
+            {dockCollapsed
+              ? '▴ Mostra 17 Armi, 4 Stanze & Modalità (H)'
+              : '▾ Nascondi Barra Controlli (Zen Mode · H)'}
           </button>
         </div>
 
-        <div className="sketch-box-sm px-3 py-2 bg-[#fbf9f3] flex flex-wrap items-center justify-between gap-2">
-          {/* 9 Stationery Weapon Slots */}
-          <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+        <div className="sketch-box-sm px-2.5 py-1.5 bg-[#fbf9f3] flex flex-wrap items-center justify-between gap-2">
+          {/* Scrollable 17 Weapon Slots */}
+          <div className="flex items-center gap-1 overflow-x-auto max-w-full lg:max-w-[54%] py-0.5">
             {WEAPONS_ARSENAL.map((w) => {
+              const unlocked = unlockedWeapons.includes(w.id);
               const active = w.id === activeWeaponId;
               return (
                 <button
                   key={w.id}
-                  onClick={() => handleSelectWeapon(w.id)}
-                  className={`px-2.5 py-1 text-xs font-hand font-bold rounded border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  onClick={() => {
+                    if (unlocked) {
+                      stateRef.current.weaponId = w.id;
+                      setActiveWeaponId(w.id);
+                    } else {
+                      triggerComicPop(`TROVA IN ${w.spawnRoom.toUpperCase()}!`);
+                    }
+                  }}
+                  className={`px-2 py-0.5 text-[11px] font-hand font-bold rounded border cursor-pointer whitespace-nowrap shrink-0 ${
                     active
                       ? 'bg-zinc-900 text-amber-300 border-zinc-950'
-                      : 'bg-[#f3eedf] text-zinc-800 border-zinc-400 hover:bg-amber-100'
+                      : unlocked
+                      ? 'bg-[#f3eedf] text-zinc-900 border-zinc-500 hover:bg-amber-100'
+                      : 'bg-zinc-200 text-zinc-400 border-zinc-300 line-through'
                   }`}
                 >
-                  [{w.keyNum}] {w.name.split(' ')[0]}
+                  [{w.keyLabel}] {w.name.split(' ')[0]}
                 </button>
               );
             })}
           </div>
 
-          {/* Map Switcher, Flush Trigger & Audio Mute */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Room Teleporters + Arsenal Mode + Boss Selector */}
+          <div className="flex items-center gap-1 overflow-x-auto shrink-0">
+            {(['scrivania', 'bagno', 'cucina', 'soggiorno'] as HouseRoom[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => handleTeleportRoom(r)}
+                className={`px-2 py-0.5 text-[11px] font-hand font-bold rounded border border-zinc-900 cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentRoom === r ? 'bg-cyan-300 text-zinc-950' : 'bg-white text-zinc-800'
+                }`}
+              >
+                {r.charAt(0).toUpperCase() + r.slice(1)}
+              </button>
+            ))}
+
             <button
               onClick={() =>
-                handleSelectMap(activeMap === 'scrivania' ? 'bagno' : 'scrivania')
+                handleSelectArsenalMode(
+                  arsenalMode === 'all_weapons' ? 'scavenger' : 'all_weapons'
+                )
               }
-              className="px-2.5 py-1 text-xs font-hand font-bold bg-cyan-200 hover:bg-cyan-300 text-zinc-950 border border-zinc-900 rounded cursor-pointer whitespace-nowrap shrink-0"
+              className="px-2 py-0.5 text-[11px] font-hand font-bold bg-amber-200 hover:bg-amber-300 text-zinc-950 border border-zinc-900 rounded cursor-pointer whitespace-nowrap shrink-0"
             >
-              Mappa: {activeMap === 'scrivania' ? 'Scrivania ➔ Bagno' : 'Bagno ➔ Scrivania'}
+              {arsenalMode === 'all_weapons' ? 'Mod: Tutte Armi' : 'Mod: Trova in Mappa'}
             </button>
 
-            {activeMap === 'bagno' && (
-              <button
-                onClick={() => {
-                  stateRef.current.flushVortexTimer = 5.0;
-                  setFlushComboActive(true);
-                  foleyAudio.playToiletFlush();
-                  triggerComicPop('SCARICO TOTALE!', '#06b6d4');
-                }}
-                disabled={flushComboActive}
-                className="px-2.5 py-1 text-xs font-hand font-bold bg-amber-300 hover:bg-amber-400 text-zinc-950 border border-zinc-900 rounded cursor-pointer whitespace-nowrap shrink-0"
-              >
-                Sciacquone WC [E]
-              </button>
-            )}
+            <button
+              onClick={() =>
+                handleSelectBossMode(
+                  bossMode === 'none' ? 'padrone' : bossMode === 'padrone' ? 'gatto' : 'none'
+                )
+              }
+              className="px-2 py-0.5 text-[11px] font-hand font-bold bg-rose-200 hover:bg-rose-300 text-zinc-950 border border-zinc-900 rounded cursor-pointer whitespace-nowrap shrink-0"
+            >
+              Boss: {bossMode === 'none' ? 'Off' : bossMode === 'padrone' ? 'Padrone' : 'Gatto'}
+            </button>
 
             <button
-              onClick={handleToggleMute}
-              className="px-2.5 py-1 text-xs font-hand font-bold bg-zinc-200 hover:bg-zinc-300 text-zinc-900 border border-zinc-900 rounded cursor-pointer whitespace-nowrap shrink-0"
+              onClick={() => {
+                foleyAudio.muted = !isMuted;
+                setIsMuted(!isMuted);
+              }}
+              className="px-2 py-0.5 text-[11px] font-hand font-bold bg-zinc-200 text-zinc-900 border border-zinc-900 rounded cursor-pointer whitespace-nowrap shrink-0"
             >
-              {isMuted ? 'Audio: OFF' : 'Audio: ON'}
+              {isMuted ? 'Muto' : 'Audio'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* 9. Title Screen / Pause / Victory Overlay Modal */}
+      {/* 8. Title Screen / Pause / Victory Modal */}
       {gamePhase !== 'playing' && !gddOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/55 p-4 pointer-events-auto">
-          <div className="sketch-box bg-graph-paper max-w-2xl w-full p-6 md:p-8 text-center space-y-6">
-            {/* Bespoke Inline SVG Hand-Drawn Title Lockup */}
+          <div className="sketch-box bg-graph-paper max-w-2xl w-full p-6 md:p-7 text-center space-y-5">
             <div className="flex flex-col items-center">
-              <svg viewBox="0 0 540 110" className="w-full max-w-md h-auto">
+              <svg viewBox="0 0 540 100" className="w-full max-w-md h-auto">
                 <rect
                   x="8"
-                  y="10"
+                  y="8"
                   width="524"
-                  height="90"
+                  height="84"
                   rx="12"
                   fill="#fde047"
                   stroke="#141413"
@@ -1582,80 +2042,124 @@ export default function App() {
                 />
                 <text
                   x="270"
-                  y="68"
+                  y="64"
                   textAnchor="middle"
                   fontFamily="Patrick Hand, cursive"
-                  fontSize="58"
+                  fontSize="54"
                   fontWeight="bold"
                   fill="#141413"
                 >
                   CALL OF DOODLE
                 </text>
               </svg>
-              <p className="text-sm md:text-base font-hand font-bold text-zinc-800 mt-2">
-                FPS 3D Microscopico su Carta a Quadretti · Stickman Ragdoll 12 FPS · Arsenale di Cancelleria
+              <p className="text-sm font-hand font-bold text-zinc-800 mt-1">
+                Casa Completa (4 Stanze) · 17 Armi Domestiche · Boss Co-op Padrone & Gatto
               </p>
             </div>
 
-            {gamePhase === 'victory' && (
-              <div className="p-4 sketch-box-sm bg-emerald-200 text-zinc-950 font-hand font-bold text-xl">
-                FINE PARTITA! Punteggio Stickman: {playerScore} — Bot Squad: {botScore}
+            {/* Mode Selection Controls right on the Title/Pause Screen */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left text-xs">
+              <div className="p-3 bg-[#fbf9f3] border-2 border-zinc-900 rounded space-y-2">
+                <div className="font-bold font-hand text-sm text-zinc-950">
+                  1. Scegli Modalità Arsenale:
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleSelectArsenalMode('all_weapons')}
+                    className={`flex-1 py-1.5 px-2 font-hand font-bold rounded border border-zinc-900 cursor-pointer ${
+                      arsenalMode === 'all_weapons'
+                        ? 'bg-zinc-900 text-amber-300'
+                        : 'bg-white text-zinc-800'
+                    }`}
+                  >
+                    Tutte le 17 Armi Subito
+                  </button>
+                  <button
+                    onClick={() => handleSelectArsenalMode('scavenger')}
+                    className={`flex-1 py-1.5 px-2 font-hand font-bold rounded border border-zinc-900 cursor-pointer ${
+                      arsenalMode === 'scavenger'
+                        ? 'bg-zinc-900 text-amber-300'
+                        : 'bg-white text-zinc-800'
+                    }`}
+                  >
+                    Trova Armi in Casa
+                  </button>
+                </div>
               </div>
-            )}
 
-            {/* Quick Feature Highlights */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left text-xs">
-              <div className="p-3 bg-[#fbf9f3] border-2 border-zinc-900 rounded">
-                <div className="font-bold font-hand text-sm text-zinc-950">9 Armi & Foley Reali</div>
-                <div className="text-zinc-700 mt-0.5">
-                  Taglierino (mozza a metà), Colla (blocca 3s), Cucchiaio (CLANG!), Bianchetto (acceca), Forbici (decapita), Gomma (cancella colpi).
+              <div className="p-3 bg-[#fbf9f3] border-2 border-zinc-900 rounded space-y-2">
+                <div className="font-bold font-hand text-sm text-zinc-950">
+                  2. Scegli Modalità Partita / Boss Co-op:
                 </div>
-              </div>
-              <div className="p-3 bg-[#fbf9f3] border-2 border-zinc-900 rounded">
-                <div className="font-bold font-hand text-sm text-zinc-950">Scrivania & Bagno 3D</div>
-                <div className="text-zinc-700 mt-0.5">
-                  Scala libri e Post-it, scivola sul caffè o naviga sulle paperelle di gomma e tira lo Sciacquone del WC!
-                </div>
-              </div>
-              <div className="p-3 bg-[#fbf9f3] border-2 border-zinc-900 rounded">
-                <div className="font-bold font-hand text-sm text-zinc-950">GDD & Shader Legacy</div>
-                <div className="text-zinc-700 mt-0.5">
-                  Include l&apos;intero Game Design Document, gli shader GLSL Boiling Line / Cross-Hatching e la Roadmap in 5 fasi.
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => handleSelectBossMode('none')}
+                    className={`flex-1 py-1.5 px-1.5 font-hand font-bold rounded border border-zinc-900 cursor-pointer ${
+                      bossMode === 'none'
+                        ? 'bg-zinc-900 text-amber-300'
+                        : 'bg-white text-zinc-800'
+                    }`}
+                  >
+                    Arena Bot
+                  </button>
+                  <button
+                    onClick={() => handleSelectBossMode('padrone')}
+                    className={`flex-1 py-1.5 px-1.5 font-hand font-bold rounded border border-zinc-900 cursor-pointer ${
+                      bossMode === 'padrone'
+                        ? 'bg-zinc-900 text-amber-300'
+                        : 'bg-white text-zinc-800'
+                    }`}
+                  >
+                    Boss Padrone
+                  </button>
+                  <button
+                    onClick={() => handleSelectBossMode('gatto')}
+                    className={`flex-1 py-1.5 px-1.5 font-hand font-bold rounded border border-zinc-900 cursor-pointer ${
+                      bossMode === 'gatto'
+                        ? 'bg-zinc-900 text-amber-300'
+                        : 'bg-white text-zinc-800'
+                    }`}
+                  >
+                    Boss Gatto
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Primary CTAs */}
-            <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
+            <div className="flex flex-wrap items-center justify-center gap-4 pt-1">
               <button
                 onClick={() => setGamePhase('playing')}
-                className="px-7 py-3 text-xl font-bold font-hand bg-zinc-900 hover:bg-zinc-800 text-amber-300 border-2 border-zinc-950 rounded-xl shadow-[4px_4px_0px_#eab308] cursor-pointer whitespace-nowrap shrink-0"
+                className="px-7 py-2.5 text-xl font-bold font-hand bg-zinc-900 hover:bg-zinc-800 text-amber-300 border-2 border-zinc-950 rounded-xl shadow-[4px_4px_0px_#eab308] cursor-pointer whitespace-nowrap shrink-0"
               >
-                {gamePhase === 'paused' ? 'Riprendi Partita (SPAZIO)' : 'Entra sul Foglio 3D (INVIO / SPAZIO)'}
+                {gamePhase === 'paused' ? 'Riprendi Partita (SPAZIO)' : 'Entra nella Casa 3D (INVIO / SPAZIO)'}
               </button>
 
               <button
                 onClick={() => setGddOpen(true)}
-                className="px-6 py-3 text-lg font-bold font-hand bg-amber-300 hover:bg-amber-400 text-zinc-950 border-2 border-zinc-950 rounded-xl shadow-[4px_4px_0px_#141413] cursor-pointer whitespace-nowrap shrink-0"
+                className="px-5 py-2.5 text-lg font-bold font-hand bg-amber-300 hover:bg-amber-400 text-zinc-950 border-2 border-zinc-950 rounded-xl shadow-[4px_4px_0px_#141413] cursor-pointer whitespace-nowrap shrink-0"
               >
-                Leggi GDD Completo & Shader
+                Apri GDD Completo & 17 Armi
               </button>
             </div>
 
-            {/* Single Flat Control-Hint Line */}
-            <div className="text-xs font-mono-code text-zinc-700 pt-1">
-              WASD Muovi · Mouse / Frecce Mira · Click / F Spara · 1-9 Armi · Spazio Salta/Scolla · E Sciacquone WC · Esc Pausa
+            <div className="text-xs font-mono-code text-zinc-700">
+              WASD Muovi · Shift Scatto · Spazio Salta · C Accovaccia · R Ricarica · Click Spara · Z/Dx Mirino Bic · E Sciacquone
             </div>
           </div>
         </div>
       )}
 
-      {/* 10. Full Interactive Game Design Document (GDD) & Technical Architecture Modal */}
+      {/* 9. Full GDD & Technical Architecture Modal */}
       <GddTechnicalModal
         isOpen={gddOpen}
         onClose={() => setGddOpen(false)}
-        onSelectWeaponToTest={handleSelectWeapon}
-        onSelectMapToPlay={handleSelectMap}
+        onSelectWeaponToTest={(wId) => {
+          stateRef.current.unlocked.add(wId);
+          setUnlockedWeapons(Array.from(stateRef.current.unlocked));
+          stateRef.current.weaponId = wId;
+          setActiveWeaponId(wId);
+        }}
+        onSelectRoomToTeleport={handleTeleportRoom}
       />
     </div>
   );

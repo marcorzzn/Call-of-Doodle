@@ -1,165 +1,395 @@
 export type WeaponId =
-  | 'penna'
+  | 'penna_bic'
+  | 'penna_scatto'
+  | 'spillatrice'
+  | 'pennarello'
+  | 'colla_caldo'
   | 'taglierino'
-  | 'colla'
   | 'cucchiaio'
-  | 'bianchetto'
-  | 'forbici'
-  | 'elastici'
-  | 'cerbottana'
-  | 'gomma';
+  | 'mestolo'
+  | 'righello'
+  | 'forchetta'
+  | 'padella'
+  | 'spugna'
+  | 'gomma'
+  | 'molletta'
+  | 'lampadina'
+  | 'phon'
+  | 'laser_gatto';
+
+export type AttackAnimType =
+  | 'shoot'
+  | 'sniper_scope'
+  | 'burst'
+  | 'swing_fast'
+  | 'swing_wide'
+  | 'thrust'
+  | 'heavy_smash'
+  | 'throw_recover'
+  | 'wind_stream'
+  | 'laser_beam';
 
 export interface WeaponSpec {
   id: WeaponId;
-  keyNum: number;
+  keyLabel: string;
+  slotIndex: number;
   name: string;
-  category: 'Assalto' | 'Mischia' | 'Crowd Control' | 'Sniper' | 'Tattica';
-  damage: number; // In half-hearts (player/bot has 6 half-hearts = 3 full hearts)
+  category: 'Cancelleria' | 'Mischia Casa' | 'Trappola / Utility' | 'Speciale Caos';
+  animType: AttackAnimType;
+  damage: number; // Out of 6 HP (3 hearts)
   fireRateMs: number;
-  ammoMax: number; // -1 for infinite melee
+  magSize: number; // -1 for melee/infinite
+  reloadTimeMs: number;
   projectileSpeed: number;
   foleyOnomatopoeia: string;
   foleyDescription: string;
   ragdollEffect: string;
   mechanicDetail: string;
   accentColor: string;
+  spawnRoom: 'scrivania' | 'cucina' | 'bagno' | 'soggiorno';
+  spawnPos: [number, number, number];
 }
 
 export const WEAPONS_ARSENAL: WeaponSpec[] = [
   {
-    id: 'penna',
-    keyNum: 1,
-    name: 'Penna Bic Balistica',
-    category: 'Assalto',
+    id: 'penna_bic',
+    keyLabel: '1',
+    slotIndex: 0,
+    name: 'Penna Blu Bic (Sniper)',
+    category: 'Cancelleria',
+    animType: 'sniper_scope',
+    damage: 5,
+    fireRateMs: 850,
+    magSize: 6,
+    reloadTimeMs: 1400,
+    projectileSpeed: 68,
+    foleyOnomatopoeia: 'CLICK-FSSS!',
+    foleyDescription: 'Click secco del tappo + sibilo supersonico del tubetto d\'inchiostro',
+    ragdollEffect: 'Colpo di precisione che lascia una traccia nera lineare e sbalza lo stickman',
+    mechanicDetail: 'Fucile di precisione: tieni premuto Tasto Destro (o Z) per mirare ATTRAVERSO il fusto trasparente esagonale della penna e sparare il tubo d\'inchiostro legato a un elastico.',
+    accentColor: '#2563eb',
+    spawnRoom: 'scrivania',
+    spawnPos: [-14, 0.7, -12],
+  },
+  {
+    id: 'penna_scatto',
+    keyLabel: '2',
+    slotIndex: 1,
+    name: 'Penna a Scatto (Raffica)',
+    category: 'Cancelleria',
+    animType: 'burst',
     damage: 2,
-    fireRateMs: 280,
-    ammoMax: 24,
-    projectileSpeed: 36,
-    foleyOnomatopoeia: 'CLICK-TWANG!',
-    foleyDescription: 'Scatto metallico della molla + schiocco secco di elastico teso',
-    ragdollEffect: 'Spinta all\'indietro sul torace con spruzzo di stelline di carta colorate',
-    mechanicDetail: 'Arma d\'ordinanza vista nel concept: fusto di penna a sfera armato con elastico giallo che spara graffette metalliche e punte d\'inchiostro.',
+    fireRateMs: 170,
+    magSize: 24,
+    reloadTimeMs: 1100,
+    projectileSpeed: 42,
+    foleyOnomatopoeia: 'CLICK-CLICK-TWANG!',
+    foleyDescription: 'Mitragliata di scatti metallici a molla in rapida successione',
+    ragdollEffect: 'Danza comica dello stickman colpito da una raffica di punte e stelline di carta',
+    mechanicDetail: 'Ibrido tra fucile tattico e mitragliatrice leggera (l\'arma iconica impugnata nello screenshot!). Alta cadenza di fuoco e ricarica rapida con [R].',
     accentColor: '#3b82f6',
+    spawnRoom: 'scrivania',
+    spawnPos: [-6, 0.7, -6],
+  },
+  {
+    id: 'spillatrice',
+    keyLabel: '3',
+    slotIndex: 2,
+    name: 'Sparapunti / Spillatrice',
+    category: 'Cancelleria',
+    animType: 'shoot',
+    damage: 3,
+    fireRateMs: 420,
+    magSize: 14,
+    reloadTimeMs: 1300,
+    projectileSpeed: 38,
+    foleyOnomatopoeia: 'KA-CHUNK!',
+    foleyDescription: 'Schiocco meccanico pesante di cucitrice industriale da ufficio',
+    ragdollEffect: 'Inchioda lo stickman al muro o al pavimento per 1.5 secondi!',
+    mechanicDetail: 'Spara grossi punti metallici a U: rimbalzano una volta sulle superfici dure, inchiodano i nemici per 1.5s e fanno saltare di dolore il Padrone di Casa ("YOWCH!").',
+    accentColor: '#64748b',
+    spawnRoom: 'scrivania',
+    spawnPos: [-10, 0.7, -3],
+  },
+  {
+    id: 'pennarello',
+    keyLabel: '4',
+    slotIndex: 3,
+    name: 'Pennarello Indelebile (Bazooka)',
+    category: 'Cancelleria',
+    animType: 'shoot',
+    damage: 5,
+    fireRateMs: 1100,
+    magSize: 4,
+    reloadTimeMs: 1800,
+    projectileSpeed: 26,
+    foleyOnomatopoeia: 'SQUEAK-BOOM!',
+    foleyDescription: 'Stridio di feltro indelebile seguito da un\'esplosione d\'inchiostro',
+    ragdollEffect: 'Onda d\'urto d\'inchiostro indelebile che scaraventa in aria gli stickman',
+    mechanicDetail: 'Bazooka pesante: lancia il tampone d\'inchiostro generando una grossa macchia nera indelebile sui muri e sui mobili (toglie tantissima Pazienza al Padrone di Casa!).',
+    accentColor: '#1e293b',
+    spawnRoom: 'scrivania',
+    spawnPos: [-17, 0.7, -5],
+  },
+  {
+    id: 'colla_caldo',
+    keyLabel: '5',
+    slotIndex: 4,
+    name: 'Pistola Colla a Caldo',
+    category: 'Cancelleria',
+    animType: 'shoot',
+    damage: 2,
+    fireRateMs: 480,
+    magSize: 12,
+    reloadTimeMs: 1300,
+    projectileSpeed: 28,
+    foleyOnomatopoeia: 'PSSST-SQUISH!',
+    foleyDescription: 'Sbuffo di vapore caldo seguito da filamento viscoso appiccicoso',
+    ragdollEffect: 'Avvolge le scarpe bianche in filamenti caldi bloccando la corsa per 3s',
+    mechanicDetail: 'Spara globi caldi e filanti che rallentano e incollano i piedi degli avversari a terra (chi è incollato deve premere [SPAZIO] ripetutamente per liberarsi).',
+    accentColor: '#f59e0b',
+    spawnRoom: 'soggiorno',
+    spawnPos: [10, 0.7, 10],
   },
   {
     id: 'taglierino',
-    keyNum: 2,
-    name: 'Taglierino a Scatto',
-    category: 'Mischia',
+    keyLabel: '6',
+    slotIndex: 5,
+    name: 'Taglierino a Scatti (Shotgun)',
+    category: 'Mischia Casa',
+    animType: 'swing_fast',
     damage: 6,
     fireRateMs: 520,
-    ammoMax: -1,
+    magSize: 8,
+    reloadTimeMs: 1200,
     projectileSpeed: 0,
-    foleyOnomatopoeia: 'CLACK-ZIIIP!',
-    foleyDescription: 'Scatto metallico della lama segmentata + taglio netto di cartoncino spesso',
-    ragdollEffect: 'Smembramento a 2 pezzi: busto e gambe si separano lasciando una pozza d\'inchiostro nero',
-    mechanicDetail: 'Arma letale ravvicinata. Colpendo lo stickman lo mozza istantaneamente a metà sul piano orizzontale; le gambe con le scarpe bianche corrono a vuoto per 1s.',
+    foleyOnomatopoeia: 'SNIKT-SNIKT!',
+    foleyDescription: 'Doppio scatto metallico della lama segmentata + taglio netto',
+    ragdollEffect: 'Mozza lo stickman a metà (busto e gambe separati + pozza d\'inchiostro)',
+    mechanicDetail: 'Come un fucile a pompa a corto raggio: espelle segmenti di lama affilati che mozzano a metà i nemici vicini e squarciano i cuscini del divano facendo volare piume!',
     accentColor: '#eab308',
-  },
-  {
-    id: 'colla',
-    keyNum: 3,
-    name: 'Tubetto di Colla',
-    category: 'Crowd Control',
-    damage: 1,
-    fireRateMs: 600,
-    ammoMax: 12,
-    projectileSpeed: 24,
-    foleyOnomatopoeia: 'SQUISH-PLOP!',
-    foleyDescription: 'Spremere un flacone semivuoto di colla vinilica densa e appiccicosa',
-    ragdollEffect: 'Incolla le scarpe da ginnastica al foglio a quadretti per 3.0 secondi',
-    mechanicDetail: 'Spara sbuffi bianchi appiccicosi. Il bersaglio colpito resta inchiodato a terra per 3 secondi (in multiplayer deve fare button-mashing di SPAZIO per liberarsi prima).',
-    accentColor: '#f59e0b',
+    spawnRoom: 'scrivania',
+    spawnPos: [-4, 0.7, -12],
   },
   {
     id: 'cucchiaio',
-    keyNum: 4,
+    keyLabel: '7',
+    slotIndex: 6,
     name: 'Cucchiaio di Metallo',
-    category: 'Mischia',
-    damage: 4,
-    fireRateMs: 650,
-    ammoMax: -1,
+    category: 'Mischia Casa',
+    animType: 'swing_fast',
+    damage: 3,
+    fireRateMs: 460,
+    magSize: -1,
+    reloadTimeMs: 0,
     projectileSpeed: 0,
-    foleyOnomatopoeia: 'CLANGGGG!',
-    foleyDescription: 'Impatto di cucchiaio d\'acciaio inox contro una pentola vuota con riverbero',
-    ragdollEffect: 'Knockback violento a catapulta + ammaccature disegnate a matita sui muri',
-    mechanicDetail: 'Mischia pesante ad ampio arco. Scaraventa via gli avversari (ottimo per buttarli giù dalla scrivania o nel WC) e incide decalcomanie di crepe sui libri.',
+    foleyOnomatopoeia: 'CLANG!',
+    foleyDescription: 'Risonanza metallica squillante di posata in acciaio inox',
+    ragdollEffect: 'Spinta all\'indietro netta + ammaccature disegnate a matita sui mobili',
+    mechanicDetail: 'Arma da mischia sempre disponibile (anche a inizio modalità Scavenger). Veloce, affidabile, spinge indietro i nemici e lascia ammaccature sui muri.',
     accentColor: '#94a3b8',
+    spawnRoom: 'cucina',
+    spawnPos: [-10, 0.7, 10],
   },
   {
-    id: 'bianchetto',
-    keyNum: 5,
-    name: 'Bianchetto (Fluid)',
-    category: 'Crowd Control',
-    damage: 2,
-    fireRateMs: 700,
-    ammoMax: 10,
-    projectileSpeed: 26,
-    foleyOnomatopoeia: 'SQUASH-POP!',
-    foleyDescription: 'Pallina agitatrice interna ("Clack-Clack") seguita da uno schizzo denso',
-    ragdollEffect: 'Accecamento totale (schermo imbiancato a pennello) per 2.0 secondi',
-    mechanicDetail: 'Spara una sfera densa di liquido correttore. Se colpisce la testa dell\'avversario, gli dipinge di bianco l\'HUD coprendo l\'intera visuale per 2 secondi.',
-    accentColor: '#ec4899',
-  },
-  {
-    id: 'forbici',
-    keyNum: 6,
-    name: 'Forbici da Ufficio',
-    category: 'Mischia',
-    damage: 6,
-    fireRateMs: 480,
-    ammoMax: -1,
+    id: 'mestolo',
+    keyLabel: '8',
+    slotIndex: 7,
+    name: 'Mestolo di Legno',
+    category: 'Mischia Casa',
+    animType: 'swing_wide',
+    damage: 4,
+    fireRateMs: 720,
+    magSize: -1,
+    reloadTimeMs: 0,
     projectileSpeed: 0,
-    foleyOnomatopoeia: 'SNIP-SNIP!',
-    foleyDescription: 'Doppio taglio metallico affilato di lame d\'acciaio su carta',
-    ragdollEffect: 'Decapitazione comica: la testa sferica nera rotola e rimbalza via come una palla',
-    mechanicDetail: 'Attacco rapido in affondo. Mirando alla parte superiore dello stickman recide il collo: la testa rotola con fisica sferica autonoma sul tavolo.',
+    foleyOnomatopoeia: 'TONF!',
+    foleyDescription: 'Colpo sordo di legno massello su scatola di cartone',
+    ragdollEffect: 'Spazzata ad arco di 160° che atterra più stickman contemporaneamente',
+    mechanicDetail: 'Più lento del cucchiaio ma con un\'area di impatto ad arco vastissima: ideale per colpire gruppi di stickman o spingere la Biglia gigante.',
+    accentColor: '#b45309',
+    spawnRoom: 'cucina',
+    spawnPos: [-15, 0.7, 13],
+  },
+  {
+    id: 'righello',
+    keyLabel: '9',
+    slotIndex: 8,
+    name: 'Righello 30 cm',
+    category: 'Mischia Casa',
+    animType: 'thrust',
+    damage: 3,
+    fireRateMs: 310,
+    magSize: -1,
+    reloadTimeMs: 0,
+    projectileSpeed: 0,
+    foleyOnomatopoeia: 'SWOOSH!',
+    foleyDescription: 'Fendente aerodinamico di plastica flessibile (effetto spada laser)',
+    ragdollEffect: 'Affondo preciso che lascia una riga rossa a penna sul torace del nemico!',
+    mechanicDetail: 'Attacco in stoccata (affondo) rapidissimo e con allungo superiore: marchia ogni stickman colpito con un segno rosso di correzione.',
     accentColor: '#ef4444',
+    spawnRoom: 'scrivania',
+    spawnPos: [-2, 0.7, -5],
   },
   {
-    id: 'elastici',
-    keyNum: 7,
-    name: 'Fionda di Elastici',
-    category: 'Assalto',
+    id: 'forchetta',
+    keyLabel: '0',
+    slotIndex: 9,
+    name: 'Forchetta Lanciabile',
+    category: 'Mischia Casa',
+    animType: 'throw_recover',
+    damage: 6,
+    fireRateMs: 550,
+    magSize: 1,
+    reloadTimeMs: 900,
+    projectileSpeed: 46,
+    foleyOnomatopoeia: 'STAB-TWANG!',
+    foleyDescription: 'Infilzata metallica + vibrazione dei rebbi conficcati nel legno',
+    ragdollEffect: 'Inchioda istantaneamente il bersaglio; resta conficcata finché non la recuperi!',
+    mechanicDetail: 'Può essere lanciata come un giavellotto letale: dove atterra si conficca vibrando e devi passarci sopra (o premere [R]) per recuperarla!',
+    accentColor: '#cbd5e1',
+    spawnRoom: 'cucina',
+    spawnPos: [-7, 0.7, 15],
+  },
+  {
+    id: 'padella',
+    keyLabel: 'Q',
+    slotIndex: 10,
+    name: 'Padella in Ghisa (Scudo)',
+    category: 'Mischia Casa',
+    animType: 'heavy_smash',
+    damage: 6,
+    fireRateMs: 1150,
+    magSize: -1,
+    reloadTimeMs: 0,
+    projectileSpeed: 0,
+    foleyOnomatopoeia: 'DONNNNG!',
+    foleyDescription: 'Campana metallica profonda di ghisa pesante con riverbero lungo',
+    ragdollEffect: 'Lancia lo stickman in orbita attraverso la stanza con hitstop di 80ms!',
+    mechanicDetail: 'Mischia pesantissima. Mentre la impugni, la padella para e fa rimbalzare automaticamente il 70% dei proiettili frontali!',
+    accentColor: '#334155',
+    spawnRoom: 'cucina',
+    spawnPos: [-13, 0.7, 7],
+  },
+  {
+    id: 'spugna',
+    keyLabel: 'V',
+    slotIndex: 11,
+    name: 'Spugna Assorbi-Liquidi',
+    category: 'Trappola / Utility',
+    animType: 'swing_wide',
     damage: 2,
-    fireRateMs: 340,
-    ammoMax: 18,
-    projectileSpeed: 32,
-    foleyOnomatopoeia: 'BOING-TWANG!',
-    foleyDescription: 'Vibrazione armonica di gomma tesa che aumenta di pitch ad ogni rimbalzo',
-    ragdollEffect: 'Avvolge gli arti dello stickman facendolo inciampare su se stesso',
-    mechanicDetail: 'Rimbalza su tutte le superfici rigide (libri, tazze, piastrelle) fino a 4 volte. Ogni rimbalzo emette un "BOING!" più acuto e incrementa il danno del +25%.',
-    accentColor: '#10b981',
-  },
-  {
-    id: 'cerbottana',
-    keyNum: 8,
-    name: 'Cerbottana + Carta',
-    category: 'Sniper',
-    damage: 5,
-    fireRateMs: 900,
-    ammoMax: 5,
-    projectileSpeed: 54,
-    foleyOnomatopoeia: 'FUUUMP-THWACK!',
-    foleyDescription: 'Soffio d\'aria compressa in cannuccia di plastica + impatto bagnato',
-    ragdollEffect: 'Colpo di precisione ad alta velocità che inchioda la testa all\'indietro',
-    mechanicDetail: 'Cannuccia rigata silenziosa e letale. Munizioni limitatissime: per ricaricare bisogna passare sopra i foglietti di carta sparsi nella mappa.',
-    accentColor: '#06b6d4',
+    fireRateMs: 450,
+    magSize: -1,
+    reloadTimeMs: 0,
+    projectileSpeed: 0,
+    foleyOnomatopoeia: 'SQUELCH-WIPE!',
+    foleyDescription: 'Spremere una spugna imbevuta d\'acqua e sapone',
+    ragdollEffect: 'Colpo morbido rimbalzante + asciuga le pozze scivolose di caffè e acqua!',
+    mechanicDetail: 'Usala vicino alla pozza di caffè rovesciata o all\'acqua per ASSORBIRE il liquido dal pavimento, oppure spremila contro un nemico!',
+    accentColor: '#facc15',
+    spawnRoom: 'bagno',
+    spawnPos: [8, 0.7, -12],
   },
   {
     id: 'gomma',
-    keyNum: 9,
+    keyLabel: 'G',
+    slotIndex: 12,
     name: 'Gomma da Cancellare',
-    category: 'Tattica',
+    category: 'Trappola / Utility',
+    animType: 'shoot',
     damage: 3,
-    fireRateMs: 850,
-    ammoMax: 6,
-    projectileSpeed: 22,
-    foleyOnomatopoeia: 'THUD-RUB-SHHH!',
-    foleyDescription: 'Rimbalzo sordo di caucciù pesante + fruscio di cancellatura su carta',
-    ragdollEffect: 'Cancellazione parziale dello stickman (dissolvenza a trucioli di gomma)',
-    mechanicDetail: 'Lanciata come granata pesante rimbalzante. Mentre vola, il suo campo d\'attrito CANCELLA fisicamente tutti i proiettili nemici a mezz\'aria!',
-    accentColor: '#8b5cf6',
+    fireRateMs: 750,
+    magSize: 6,
+    reloadTimeMs: 1200,
+    projectileSpeed: 25,
+    foleyOnomatopoeia: 'BOING-RUB!',
+    foleyDescription: 'Rimbalzo pazzo da super-ball + fruscio di cancellatura su carta',
+    ragdollEffect: 'Stordisce il nemico e cancella tutti i proiettili avversari a mezz\'aria!',
+    mechanicDetail: 'Rimbalza in modo imprevedibile fino a 5 volte sui mobili e cancella dalla realtà qualsiasi proiettile nemico incontri lungo la traiettoria.',
+    accentColor: '#ec4899',
+    spawnRoom: 'scrivania',
+    spawnPos: [-9, 0.7, -9],
+  },
+  {
+    id: 'molletta',
+    keyLabel: 'T',
+    slotIndex: 13,
+    name: 'Molletta & Scotch (Trappola)',
+    category: 'Trappola / Utility',
+    animType: 'shoot',
+    damage: 3,
+    fireRateMs: 800,
+    magSize: 5,
+    reloadTimeMs: 1400,
+    projectileSpeed: 18,
+    foleyOnomatopoeia: 'SNAP-PINCH!',
+    foleyDescription: 'Scatto secco di molla metallica che pinza una scarpa',
+    ragdollEffect: 'Pinza il piede del primo nemico che ci cammina sopra bloccandolo per 3.5s!',
+    mechanicDetail: 'Lanciata a terra resta armata come trappola: appena uno stickman (o il Padrone di Casa) ci passa sopra, scatta con un forte "SNAP!".',
+    accentColor: '#10b981',
+    spawnRoom: 'bagno',
+    spawnPos: [14, 0.7, -4],
+  },
+  {
+    id: 'lampadina',
+    keyLabel: 'B',
+    slotIndex: 14,
+    name: 'Lampadina & Batteria AA (Flash)',
+    category: 'Trappola / Utility',
+    animType: 'shoot',
+    damage: 4,
+    fireRateMs: 950,
+    magSize: 4,
+    reloadTimeMs: 1500,
+    projectileSpeed: 24,
+    foleyOnomatopoeia: 'POP-CRACKLE!',
+    foleyDescription: 'Scoppio di bulbo di vetro sottovuoto + scarica elettrica AA',
+    ragdollEffect: 'Flashbang accecante di 2.5s + esplosione elettrica se tocca l\'acqua!',
+    mechanicDetail: 'Granata ibrida: esplode con un "POP!" accecando chi guarda e, se cade nella Vasca da Bagno o in una pozza d\'acqua, fulmina l\'intera area!',
+    accentColor: '#fde047',
+    spawnRoom: 'soggiorno',
+    spawnPos: [14, 0.7, 14],
+  },
+  {
+    id: 'phon',
+    keyLabel: 'F',
+    slotIndex: 15,
+    name: 'Phon Asciugacapelli (Vento/Elettro)',
+    category: 'Speciale Caos',
+    animType: 'wind_stream',
+    damage: 2,
+    fireRateMs: 220,
+    magSize: 30,
+    reloadTimeMs: 1600,
+    projectileSpeed: 34,
+    foleyOnomatopoeia: 'WHOOOOOSH-BZZZ!',
+    foleyDescription: 'Turbina d\'aria calda continua + scarica 220V se colpisce la vasca',
+    ragdollEffect: 'Spinge via stickman e fogli con linee di velocità; nella Vasca fa "BZZZ-BZZZ!"',
+    mechanicDetail: 'Spara un getto di vento che fa volare via i nemici. COMBO LETALE: se spari col Phon dentro la Vasca da Bagno in cui c\'è qualcuno, fulmini tutti ("BZZZ-BZZZ!") forzando il respawn!',
+    accentColor: '#06b6d4',
+    spawnRoom: 'bagno',
+    spawnPos: [5, 0.7, -6],
+  },
+  {
+    id: 'laser_gatto',
+    keyLabel: 'L',
+    slotIndex: 16,
+    name: 'Puntatore Laser & Gomitolo',
+    category: 'Speciale Caos',
+    animType: 'laser_beam',
+    damage: 1,
+    fireRateMs: 120,
+    magSize: -1,
+    reloadTimeMs: 0,
+    projectileSpeed: 80,
+    foleyOnomatopoeia: 'BEEP-MEOW!',
+    foleyDescription: 'Click elettronico del diodo laser + miagolio furioso del Gatto',
+    ragdollEffect: 'Attira istantaneamente il Gatto Gigante a saltare e distruggere il punto mirato!',
+    mechanicDetail: 'Strumento chiave per la modalità "Cat-astrophe": punta il cerchietto rosso laser su mobili, libri o nemici per far scattare la zampata del Gatto Gigante!',
+    accentColor: '#ef4444',
+    spawnRoom: 'soggiorno',
+    spawnPos: [5, 0.7, 5],
   },
 ];
 
@@ -177,132 +407,122 @@ export interface MapBlueprint {
 export const MAPS_BLUEPRINTS: MapBlueprint[] = [
   {
     id: 'scrivania',
-    name: '01. La Scrivania (Mappa Iconica)',
-    subtitle: 'Foglio a quadretti centrale circondato da cancelleria gigante e tazza di caffè rovesciata',
+    name: 'Quadrante Nord-Ovest: Lo Studio / Scrivania',
+    subtitle: 'Foglio a quadretti master, pila di libri, tazza di caffè rovesciata, Ventilatore e Lampada oscillante',
     playableInDemo: true,
     scaleRatio: '1 Stickman = 4.5 cm reali',
     themeColor: '#eab308',
     landmarks: [
       {
-        name: 'Bastione dei Libri Impilati (Verde/Rosso/Blu)',
-        role: 'High-Ground & Scalinata',
-        interaction: 'Funge da fortezza multi-livello per la Cerbottana; le copertine rigide fanno rimbalzare gli Elastici.',
+        name: 'Bastione dei Libri Impilati & Post-It',
+        role: 'High-Ground & Copertura',
+        interaction: 'Funge da roccaforte per la Penna Blu Bic (Sniper); i Post-it offrono riparo accovacciandosi con [C].',
       },
       {
-        name: 'Torri di Post-It Gialli e Rosa',
-        role: 'Copertura Distruttibile a Strati',
-        interaction: 'I colpi di Taglierino o Forbici sfogliano via i Post-it superiori riducendo l\'altezza del riparo.',
+        name: 'Tazza di Caffè Rovesciata (Assorbibile)',
+        role: 'Zona Scivolosa',
+        interaction: 'Fa pattinare gli stickman ad alta velocità; può essere asciugata colpendola con la Spugna!',
       },
       {
-        name: 'Tazza di Caffè Rovesciata',
-        role: 'Zona Hazard Scivolosa + Tunnel',
-        interaction: 'La pozza di caffè marrone riduce l\'attrito dell\'80% (pattinaggio ad alta velocità) ma macchia le scarpe bianche lasciando impronte tracciabili.',
-      },
-      {
-        name: 'Portapenne Metallici Cilindrici',
-        role: 'Torri Verticali & Rifornimento',
-        interaction: 'Scalabili tramite righelli appoggiati; colpiti col Cucchiaio risuonano stordendo chi si nasconde dentro.',
+        name: 'Ventilatore da Tavolo con Pale',
+        role: 'Zona di Vento & Sballottamento',
+        interaction: 'Accendendolo crea una corrente continua che spinge gli stickman, devia i fogli e spazza le piume.',
       },
     ],
     hazardEvent: {
-      name: 'Raffica del Ventilatore da Tavolo',
-      trigger: 'Colpire il tasto ON del mini-ventilatore USB a bordo scrivania',
-      effect: 'Vento laterale per 8 secondi che devia i proiettili leggeri (Palle di carta, Elastici) e fa volare foglietti bonus per ricaricare la Cerbottana.',
+      name: 'Oscillazione della Lampada da Tavolo',
+      trigger: 'Colpire il paralume metallico sospeso',
+      effect: 'La lampada dondola sopra la scrivania stordendo chi viene colpito in testa.',
     },
   },
   {
     id: 'bagno',
-    name: '02. Il Bagno (Zona Caos & Vortice)',
-    subtitle: 'Piastrelle disegnate a pennarello, vasca navigabile su paperelle e la Mega-Combo dello Sciacquone',
+    name: 'Quadrante Nord-Est: Il Bagno',
+    subtitle: 'Vasca con Paperelle di Gomma, Saponetta Hockey, Sciacquone del WC e Combo Elettrica Phon + Acqua',
     playableInDemo: true,
-    scaleRatio: '1 Stickman = 5.0 cm reali',
+    scaleRatio: '1 Stickman = 4.5 cm reali',
     themeColor: '#06b6d4',
     landmarks: [
       {
-        name: 'La Vasca delle Paperelle di Gomma',
-        role: 'Navigazione Acquatica & Piattaforme Mobili',
-        interaction: 'Tre paperelle gialle galleggiano sull\'acqua disegnata: salendoci sopra fanno "SQUEAK!" e trasportano il giocatore da un bordo all\'altro.',
+        name: 'Vasca da Bagno & Paperelle di Gomma',
+        role: 'Navigazione & Elettrocuzione',
+        interaction: 'Si naviga saltando sulle Paperelle ("SQUEAK!"). Se qualcuno usa il Phon o la Lampadina sulla vasca, tutti nell\'acqua fanno "BZZZ-BZZZ!" e respawnano!',
       },
       {
-        name: 'Il Trono di Porcellana (WC Interattivo)',
-        role: 'Obiettivo Centrale & Trappola Mortale',
-        interaction: 'La tavoletta può essere aperta/chiusa. Chi sale sulla cassetta superiore e tira la catena attiva lo Sciacquone.',
+        name: 'Il Trono di Porcellana (WC con Sciacquone)',
+        role: 'Vortice Gravitazionale',
+        interaction: 'Premendo [E] si apre la tavoletta e si tira lo sciacquone: risucchia tutti gli stickman nel raggio di 14m per una Mega-Combo!',
       },
       {
-        name: 'Rotolo di Carta Igienica & Spazzolini',
-        role: 'Ponti Sospesi & Coperture Morbide',
-        interaction: 'La carta igienica assorbe gli schizzi di Bianchetto e Colla senza farli rimbalzare.',
-      },
-      {
-        name: 'Tubetto di Dentifricio Gigante',
-        role: 'Trappola a Pressione',
-        interaction: 'Saltando sulla pancia del tubetto col Cucchiaio, spara dal tappo un getto di pasta verde menta che incolla e spinge chi passa davanti.',
+        name: 'La Saponetta Scivolosa',
+        role: 'Slitta & Trappola',
+        interaction: 'Calpestandola si scivola via dritti come un disco da hockey sbattendo contro i mobili.',
       },
     ],
     hazardEvent: {
-      name: 'MEGA-COMBO: Tavoletta Aperta + Tirare lo Sciacquone!',
-      trigger: 'Premere [E] o colpire la leva cromata dello sciacquone sul retro del WC',
-      effect: 'La tavoletta si spalanca e si genera un vortice d\'acqua a spirale per 5 secondi: tutti gli stickman nel raggio di 14 metri vengono risucchiati nello scarico assegnando una Combo Multi-Kill a chi l\'ha attivato!',
+      name: 'COMBO: Phon nella Vasca ("BZZZ-BZZZ!") + Sciacquone WC',
+      trigger: 'Sparare col Phon/Lampadina verso la vasca o premere [E] vicino al WC',
+      effect: 'Scarica elettrica a fumetto su tutta la vasca da bagno o vortice d\'acqua totale nel water.',
     },
   },
   {
     id: 'cucina',
-    name: '03. La Cucina (Acustica & Rimbalzi)',
-    subtitle: 'Piano cottura gigante, pentole in acciaio fonoassorbenti, taglieri in legno e spugne elastiche',
-    playableInDemo: false,
+    name: 'Quadrante Sud-Ovest: La Cucina',
+    subtitle: 'Tostapane lancia-fette, Pentole in acciaio, Cavatappi d\'ancoraggio, Bottiglia frangibile e Tappo di Sughero',
+    playableInDemo: true,
     scaleRatio: '1 Stickman = 4.5 cm reali',
     themeColor: '#f97316',
     landmarks: [
       {
-        name: 'Pentole Rovesciate in Acciaio Inox',
-        role: 'Bunker Acustico & Scudo Balistico',
-        interaction: 'Entrando sotto una pentola tramite il beccuccio, il Web Audio applica un filtro Low-Pass a 350Hz (suoni ovattati) e gli elastici rimbalzano fuori.',
+        name: 'Il Tostapane a Molla (Piattaforma & Catapulta)',
+        role: 'Jump-Pad & Proiettili di Pane',
+        interaction: 'Saltandoci sopra scatta con un "DING!" lanciando gli stickman in alto insieme a due fette di pane tostato impazzite!',
       },
       {
-        name: 'Spugne Abrasive Giallo-Verdi',
-        role: 'Jump-Pad Naturali',
-        interaction: 'Il lato giallo morbido lancia gli stickman fino in cima al frigorifero; il lato verde ruvido rallenta la corsa del 40%.',
+        name: 'Il Tappo di Sughero (Elmo Cosmetico)',
+        role: 'Equipaggiamento Speciale',
+        interaction: 'Raccogliendolo in cucina lo indossi sulla testa dello stickman come un vero elmo da battaglia!',
       },
       {
-        name: 'Tagliere con Posate Giganti',
-        role: 'Passerelle & Deflettori Metallici',
-        interaction: 'Le lame dei coltelli da cucina fungono da specchi balistici per rimbalzi angolati millimetrici.',
+        name: 'Pentole, Padella & Bottiglia d\'Acqua',
+        role: 'Bunker & Pozza Conduttiva',
+        interaction: 'La bottiglia se colpita fa "CRASH-SPLASH!" creando una pozza d\'acqua conduttiva.',
       },
     ],
     hazardEvent: {
       name: 'Eruzione del Tostapane',
-      trigger: 'Timer ciclico ogni 60 secondi (ticchettio metallico crescente)',
-      effect: 'Due fette di pane tostato schizzano verso il soffitto lanciando in aria chiunque si trovi sopra le fessure.',
+      trigger: 'Salire sulla fessura del tostapane in cucina',
+      effect: 'Catapulta verticale istantanea per raggiungere le mensole alte.',
     },
   },
   {
     id: 'soggiorno',
-    name: '04. Il Soggiorno (Trincee & Telecomando)',
-    subtitle: 'Cuscini del divano fonoassorbenti, canyon tra i braccioli, telecomando interattivo e tappeto elastico',
-    playableInDemo: false,
+    name: 'Quadrante Sud-Est: Il Soggiorno',
+    subtitle: 'Divano Trampolino, Aspirapolvere risucchia-tutto, Metro a Nastro, Trappola per Topi e Biglia rotolante',
+    playableInDemo: true,
     scaleRatio: '1 Stickman = 4.5 cm reali',
     themeColor: '#10b981',
     landmarks: [
       {
-        name: 'Fortezza dei Cuscini del Divano',
-        role: 'Copertura Assorbente (Zero-Ricochet)',
-        interaction: 'I tessuti imbottiti assorbono completamente proiettili di Penna, Elastici e Gomme da Cancellare neutralizzando i rimbalzi.',
+        name: 'Il Divano Elastico (Squash & Stretch)',
+        role: 'Super Trampolino',
+        interaction: 'Saltando sui cuscini verdi si rimbalza altissimo ("BOING-BOING!"); tagliandoli col Taglierino volano piume bianche!',
       },
       {
-        name: 'Telecomando Gigante a 24 Tasti',
-        role: 'Piattaforma a Pulsanti Attivi',
-        interaction: 'Calpestare il tasto MUTE silenzia l\'audio di tutti i giocatori per 4 secondi; il tasto CH+ cambia l\'illuminazione della stanza.',
+        name: 'L\'Aspirapolvere Accendibile',
+        role: 'Vortice d\'Aspirazione a 180°',
+        interaction: 'Aspira gli stickman verso il tubo ("VRRRRR-CLUNK!") intrappolandoli per 5 secondi nel serbatoio.',
       },
       {
-        name: 'Riviste Arrotolate & Tappeto Elastico',
-        role: 'Tunnel di Fiancheggiamento & Rotazione Rapida',
-        interaction: 'Permette di attraversare il centro scoperto senza esporsi ai cecchini con Cerbottana.',
+        name: 'Metro a Nastro, Trappola per Topi & Biglia',
+        role: 'Catene Fisiche Caotiche',
+        interaction: 'Il Metro a Nastro e la Trappola per Topi ("CLACK!") lanciano in orbita chi ci passa sopra; la Biglia rotola travolgendo gli stickman.',
       },
     ],
     hazardEvent: {
-      name: 'Passaggio dell\'Aspirapolvere Robot',
-      trigger: 'Attivazione dal tasto ROSSO sul telecomando',
-      effect: 'Un disco aspirante pattuglia il pavimento: spazza via le pozze di colla/inchiostro e risucchia chi resta a livello zero.',
+      name: 'Reazione a Catena del Soggiorno',
+      trigger: 'Attivare Ventilatore / Biglia / Puntatore Laser del Gatto',
+      effect: 'La biglia fa scattare il metro a nastro mentre il Gatto o l\'Aspirapolvere seminano il panico nella stanza.',
     },
   },
 ];
@@ -310,11 +530,9 @@ export const MAPS_BLUEPRINTS: MapBlueprint[] = [
 export const TECHNICAL_SHADERS_CODE = {
   boilingOutlineVertex: `// 1. VERTEX SHADER: Contorno "Boiling Line" a 12 FPS (Inverted Hull)
 // Compatibile WebGL 1.0 (Intel GMA 3150 / eMachines EM355)
-// Zero Post-Processing: usa 1 draw call aggiuntivo con BackSide culling
 uniform float uTime;
-uniform float uOutlineWidth; // es. 0.035
+uniform float uOutlineWidth;
 
-// Hash deterministico ultra-leggero (zero texture lookup)
 float hash13(vec3 p3) {
   p3 = fract(p3 * 0.1031);
   p3 += dot(p3, p3.zyx + 31.32);
@@ -322,72 +540,41 @@ float hash13(vec3 p3) {
 }
 
 void main() {
-  // Quantizza il tempo a 12 frame al secondo per l'effetto "disegnato a mano"
   float steppedTime = floor(uTime * 12.0);
-  
-  // Calcola un jitter pseudo-casuale per ogni vertice a 12Hz
   float sketchJitter = (hash13(position + vec3(steppedTime)) - 0.5) * 0.018;
-  
-  // Espande il vertice lungo la normale con spessore irregolare a matita
   vec3 displaced = position + normal * (uOutlineWidth + sketchJitter);
-  
   gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
 }`,
 
   crossHatchFragment: `// 2. FRAGMENT SHADER: Ombreggiatura a Tratteggio Incrociato (Cross-Hatching)
-// Sostituisce completamente le ShadowMap hardware pesanti
 precision mediump float;
-
-uniform vec3 uBaseColor;     // Colore pastello piatto
-uniform vec3 uLightDir;      // Direzione luce principale normalizzata
+uniform vec3 uBaseColor;
+uniform vec3 uLightDir;
 varying vec3 vNormal;
 varying vec2 vUv;
 
 void main() {
-  // Calcolo Lambertiano super-economico
   float ndl = clamp(dot(normalize(vNormal), normalize(uLightDir)), 0.0, 1.0);
-  
-  // Coordinate di tratteggio scalate sulla geometria
   vec2 hatchUV = vUv * 42.0;
-  
-  // Linee diagonali a 45° e -45° generate analiticamente (zero texture RAM!)
   float lineA = step(0.18, abs(fract(hatchUV.x + hatchUV.y) - 0.5));
   float lineB = step(0.18, abs(fract(hatchUV.x - hatchUV.y) - 0.5));
   float lineC = step(0.22, abs(fract(hatchUV.y * 1.5) - 0.5));
-  
   vec3 pencilColor = uBaseColor;
-  
-  // 3 fasce discrete di ombra a matita (Grafite #1c1917)
   if (ndl < 0.65) pencilColor *= mix(0.72, 1.0, lineA);
   if (ndl < 0.40) pencilColor *= mix(0.55, 1.0, lineB);
   if (ndl < 0.20) pencilColor *= mix(0.35, 1.0, lineC);
-  
   gl_FragColor = vec4(pencilColor, 1.0);
 }`,
 
-  steppedAnimationCode: `// 3. QUANTIZZATORE ANIMAZIONI STICKMAN A 12 FPS & RAGDOLL POOLING
-// Evita qualsiasi allocazione sul Garbage Collector (Zero-GC Loop)
-const STEP_FPS = 12;
-
-export function updateStickmanSteppedPose(
-  actor: StickmanRig,
-  elapsedTime: number,
-  isMoving: boolean
-): void {
-  // 1. Discretizza il clock globale a step di 83.3ms (12 FPS)
-  const quantizedT = Math.floor(elapsedTime * STEP_FPS) / STEP_FPS;
-  
-  // 2. Ciclo di corsa scattoso "Flipbook"
-  const swing = isMoving ? Math.sin(quantizedT * 14.0) * 0.75 : 0;
-  actor.leftLeg.rotation.x = swing;
-  actor.rightLeg.rotation.x = -swing;
-  actor.leftArm.rotation.x = -swing * 0.8;
-  actor.rightArm.rotation.x = swing * 0.8;
-  
-  // 3. Le scarpe bianche mantengono il pivot parallelo al foglio
-  actor.leftShoe.rotation.x = -swing * 0.35;
-  actor.rightShoe.rotation.x = swing * 0.35;
-}`
+  steppedAnimationCode: `// 3. SISTEMA DI MOVIMENTO AVANZATO (SHIFT SPRINT, C CROUCH, R RELOAD)
+// + BOSS FIGHTS "DOMESTIC CHAOS" (PADRONE) & "CAT-ASTROPHE" (GATTO)
+export function updateStickmanMovementAndBosses(dt: number) {
+  // Sprint (Shift): +55% speed, consuma Stamina verde, FOV 72 -> 78
+  // Crouch (C): abbassa altezza occhi 1.68m -> 0.95m per copertura dietro Post-it
+  // Reload (R): ricarica il caricatore con rotazione 3D del viewmodel
+  // Boss Padrone: spazza con la Scopa, perde Pazienza se sporchi coi Pennarelli
+  // Boss Gatto: insegue il Puntatore Laser rosso distruggendo libri e vasi!
+}`,
 };
 
 export interface RoadmapPhase {
@@ -402,59 +589,52 @@ export const SOLO_DEV_ROADMAP: RoadmapPhase[] = [
   {
     phase: 'FASE 1',
     duration: 'Settimane 1–3',
-    title: 'Core Engine "Paper-GL" & Locomozione Stickman 12 FPS',
+    title: 'Core Engine "Paper-GL" & Locomozione Completa (Sprint, Salto, Accovacciamento)',
     deliverables: [
-      'Setup Three.js / WebGL 1.0 con disattivazione automatica di MSAA, ShadowMap hardware e Post-Processing su GPU integrate.',
-      'Implementazione dello shader Inverted-Hull "Boiling Line" a 12Hz e del materiale Cross-Hatching analitico senza texture.',
-      'Controller FPS snello con fisica AABB/Cilindrica custom (zero motori fisici pesanti come Ammo.js/Havok) e animazione procedurale scattosa a 12 FPS.',
-      'Rig dello Stickman a 10 parti con testa sferica, occhi bianchi vuoti e scarpe da ginnastica bianche con lacci disegnati.',
+      'Setup Three.js WebGL 1.0 low-spec con shader Boiling Line a 12Hz e Cross-Hatching a matita.',
+      'Locomozione FPS reattiva: Scatto (Shift) con barra stamina, Salto (Spazio), Accovacciamento (C) e Ricarica (R).',
+      'Rig Stickman fedele al concept (testa nera sfumata a carboncino senza occhi bianchi, scarpe bianche con lacci, elmo Tappo di Sughero opzionale).',
     ],
-    optimizationMilestone: '60 FPS fissi su Intel Atom N455 / GMA 3150 a risoluzione 1024x600 (< 8 MB VRAM allocata).',
+    optimizationMilestone: '60 FPS fissi su eMachines EM355 (Intel Atom N455 + GMA 3150, < 8 MB VRAM).',
   },
   {
     phase: 'FASE 2',
     duration: 'Settimane 4–7',
-    title: 'Arsenale di Cancelleria, Smembramento Ragdoll & Sintetizzatore Foley',
+    title: 'Le 17 Armi Domestiche, Animazioni Viewmodel & Modalità Scavenger',
     deliverables: [
-      'Implementazione delle 9 armi con comportamenti balistici distinti (rimbalzo elastici, cancellazione proiettili a mezz\'aria della Gomma, munizioni di carta per Cerbottana).',
-      'Sistema di smembramento istantaneo pooled: taglio a metà del Taglierino (busto + gambe indipendenti + decal inchiostro) e decapitazione con le Forbici.',
-      'Stati alterati: blocco a terra per 3s con Tubetto di Colla (con minigame button-mashing SPAZIO) e accecamento HUD con Bianchetto.',
-      'Motore audio procedurale Web Audio API per suoni fisici ("CLANG!", "SQUISH!", "SNIP!", "BOING!") senza file MP3 esterni.',
+      'Implementazione delle 17 armi con animazioni dedicate (mirino ottico attraverso la Penna Bic trasparente, fendente Mestolo, affondo Righello, lancio e recupero Forchetta, scudo Padella).',
+      'Doppia modalità d\'equipaggiamento: Sandbox (tutte le armi subito) e Scavenger (raccogli le armi sparse nelle 4 stanze della casa).',
     ],
-    optimizationMilestone: 'Object Pooling pre-allocato per 64 proiettili, 32 decalcomanie d\'inchiostro e 16 arti smembrati (Zero Garbage Collection pauses).',
+    optimizationMilestone: 'Zero-GC Object Pooling per proiettili, spille a terra, forchette conficcate e scie di passi a inchiostro.',
   },
   {
     phase: 'FASE 3',
     duration: 'Settimane 8–12',
-    title: 'Level Design Microscopico & Interazioni Ambientali (Le 4 Stanze)',
+    title: 'La Casa Interconnessa (4 Stanze) & Fisica Caotica a Catena',
     deliverables: [
-      'Costruzione low-poly de La Scrivania (libri scalabili, pozza di caffè scivolosa, Post-it distruttibili) e Il Bagno (vasca con paperelle di gomma navigabili).',
-      'Scripting della Mega-Combo "Tavoletta + Sciacquone del WC": attrattore gravitazionale a spirale che risucchia tutti gli stickman nella tazza.',
-      'Costruzione de La Cucina (pentole con filtro acustico Low-Pass, spugne trampolino) e Il Soggiorno (cuscini assorbi-proiettili, telecomando interattivo).',
-      'Merging statico delle geometrie di scenario per mantenere le draw call totali sotto quota 35.',
+      'Mappa continua con Studio/Scrivania, Bagno, Cucina e Soggiorno collegati da varchi.',
+      'Trappole e oggetti fisici leggeri: Ventilatore, Aspirapolvere, Tostapane catapulta, Metro a Nastro, Trappola per Topi, Saponetta, Biglia e combo Phon nella Vasca ("BZZZ-BZZZ!").',
     ],
-    optimizationMilestone: 'Static Batching per colore/materiale e Frustum Culling aggressivo; < 14.500 triangoli totali per mappa.',
+    optimizationMilestone: 'Collider primitivi AABB/Sferici puramente analitici (< 0.4ms CPU per frame).',
   },
   {
     phase: 'FASE 4',
     duration: 'Settimane 13–16',
-    title: 'Bot AI Tattici & Architettura Multiplayer LAN / WebRTC Ultra-Light',
+    title: 'Boss Fight Co-op: "Domestic Chaos" (Padrone) & "Cat-astrophe" (Gatto)',
     deliverables: [
-      'Macchina a stati finiti (FSM) per i Bot in Singleplayer: navigazione su waypoint, raccolta fogli di carta, uso di coperture e attivazione dello sciacquone.',
-      'Netcode binario su WebSockets / WebRTC DataChannels a 20Hz con pacchetti da 18 byte (posizione quantizzata Int16, angoli Uint8, bitmask azioni).',
-      'Client-side prediction per il movimento e lag compensation leggera per i colpi di Cerbottana e Forbici.',
+      'Modalità "The Tidy Tyrant": il Padrone di Casa gigante con Scopa e Piumino + Barra della Pazienza da svuotare sporcando i muri col Pennarello e rovesciando il caffè.',
+      'Modalità "Cat-astrophe": il Gatto Gigante guidato dal Puntatore Laser e dal Gomitolo per innescare reazioni a catena distruttive.',
     ],
-    optimizationMilestone: 'Consumo banda < 12 KB/s per giocatore; giocabile in LAN scolastica/ufficio o browser P2P senza server dedicati costosi.',
+    optimizationMilestone: 'Sincronizzazione deterministica degli stati Boss su pacchetti WebRTC da 24 byte.',
   },
   {
     phase: 'FASE 5',
     duration: 'Settimane 17–20',
-    title: 'HUD "Pennarello su Quaderno", Polish & Stress-Test Legacy',
+    title: 'HUD Fedele allo Screenshot, Audio Foley & Polish Finale',
     deliverables: [
-      'Interfaccia HUD disegnata a mano: cuoricini rossi sbarrati da una X nera al danno, contatore munizioni e timer in box fumetto, overlay grana della carta.',
-      'Modalità "Notebook Low-Spec" automatica per netbook con 1GB di RAM (disabilita particellari secondari e riduce la risoluzione interna a 0.75x).',
-      'Bilanciamento finale TTK, feedback hitstop (60ms sul Cucchiaio) e pacchettizzazione PWA offline.',
+      'HUD identico al concept art: strisce P1/P2 tratteggiate a matita, timer 02:14 ritagliato, box cuoricini verde/arancione e barre con pedina stickman.',
+      'Bilanciamento finale e modalità Low-Spec automatica.',
     ],
-    optimizationMilestone: 'Cold-boot in meno di 1.8 secondi, bundle complessivo < 450 KB gzipped, zero memory leaks su sessioni di 2 ore.',
+    optimizationMilestone: 'Bundle < 450 KB gzipped, zero memory leaks.',
   },
 ];
