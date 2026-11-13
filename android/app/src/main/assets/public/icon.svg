@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="104" fill="#f6f3ea" />
+  
+  <!-- Quadretti pattern -->
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#3b82f6" stroke-width="0.8" opacity="0.2" />
+    </pattern>
+  </defs>
+  <rect width="512" height="512" rx="104" fill="url(#grid)" />
+  
+  <!-- Outer hand-drawn sketch border -->
+  <rect x="20" y="20" width="472" height="472" rx="88" fill="none" stroke="#141413" stroke-width="8" stroke-dasharray="14 4" />
+
+  <!-- Ground ink hatching -->
+  <ellipse cx="256" cy="420" rx="170" ry="24" fill="#141413" opacity="0.15" />
+  <ellipse cx="256" cy="420" rx="130" ry="16" fill="#141413" opacity="0.25" />
+
+  <!-- Stickman drawing -->
+  <!-- Legs with sneakers -->
+  <line x1="256" y1="270" x2="200" y2="380" stroke="#141413" stroke-width="18" stroke-linecap="round" />
+  <line x1="256" y1="270" x2="312" y2="380" stroke="#141413" stroke-width="18" stroke-linecap="round" />
+  <!-- White sneakers -->
+  <rect x="160" y="375" width="54" height="26" rx="10" fill="#ffffff" stroke="#141413" stroke-width="6" />
+  <rect x="300" y="375" width="54" height="26" rx="10" fill="#ffffff" stroke="#141413" stroke-width="6" />
+
+  <!-- Torso -->
+  <line x1="256" y1="170" x2="256" y2="280" stroke="#141413" stroke-width="22" stroke-linecap="round" />
+
+  <!-- Arms holding hero pen rifle -->
+  <line x1="256" y1="190" x2="190" y2="225" stroke="#141413" stroke-width="16" stroke-linecap="round" />
+  <line x1="256" y1="190" x2="320" y2="215" stroke="#141413" stroke-width="16" stroke-linecap="round" />
+
+  <!-- Hero Pen-Rifle -->
+  <rect x="180" y="205" width="160" height="24" rx="6" fill="#94a3b8" stroke="#141413" stroke-width="6" />
+  <rect x="180" y="205" width="48" height="24" rx="4" fill="#3b82f6" stroke="#141413" stroke-width="5" />
+  <polygon points="180,205 145,217 180,229" fill="#1e293b" stroke="#141413" stroke-width="5" />
+  <!-- Yellow rubber bands -->
+  <line x1="240" y1="202" x2="245" y2="232" stroke="#eab308" stroke-width="8" stroke-linecap="round" />
+  <line x1="275" y1="202" x2="280" y2="232" stroke="#eab308" stroke-width="8" stroke-linecap="round" />
+
+  <!-- Stickman Head with charcoal gradient & specular -->
+  <circle cx="256" cy="120" r="54" fill="#18181b" stroke="#141413" stroke-width="8" />
+  <ellipse cx="238" cy="100" rx="16" ry="10" fill="#a1a1aa" transform="rotate(-20 238 100)" />
+
+  <!-- Comic muzzle / starburst -->
+  <polygon points="120,217 142,205 136,217 146,225 128,228 116,238 122,224 105,217" fill="#facc15" stroke="#141413" stroke-width="4" />
+</svg>

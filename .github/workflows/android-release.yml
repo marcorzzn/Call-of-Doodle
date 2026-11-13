@@ -1,0 +1,121 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Build Call of Doodle APK & Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Node dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build Web App & Sync Capacitor Android
+        run: |
+          npm run build
+          npx cap sync android
+
+      - name: Prepare Android Signing Keystore
+        id: keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          KEYSTORE_PATH="/tmp/callofdoodle-release.keystore"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+            echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> $GITHUB_ENV
+            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASS" >> $GITHUB_ENV
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_SECRET" >> $GITHUB_ENV
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASS_SECRET" >> $GITHUB_ENV
+          else
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE_PATH" \
+              -storetype PKCS12 \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias callofdoodle \
+              -storepass callofdoodle123 \
+              -keypass callofdoodle123 \
+              -dname "CN=Call of Doodle, OU=Mobile, O=CallOfDoodle, L=Home, S=Italy, C=IT"
+            echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> $GITHUB_ENV
+            echo "ANDROID_KEYSTORE_PASSWORD=callofdoodle123" >> $GITHUB_ENV
+            echo "ANDROID_KEY_ALIAS=callofdoodle" >> $GITHUB_ENV
+            echo "ANDROID_KEY_PASSWORD=callofdoodle123" >> $GITHUB_ENV
+          fi
+
+      - name: Compile Android Release APK with Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            --no-daemon \
+            -PappVersionCode=${{ github.run_number }} \
+            -PappVersionName="1.0.${{ github.run_number }}"
+
+      - name: Package & Rename APK
+        run: |
+          APK_NAME="Call-of-Doodle-v1.0.${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+          echo "APK_FILENAME=$APK_NAME" >> $GITHUB_ENV
+          ls -lh "$APK_NAME"
+
+      - name: Upload APK Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Call-of-Doodle-v1.0.${{ github.run_number }}-APK
+          path: ${{ env.APK_FILENAME }}
+
+      - name: Create GitHub Release with Downloadable APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Call of Doodle v1.0.${{ github.run_number }} (Android APK)
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ### 📱 Call of Doodle — Build Android APK `v1.0.${{ github.run_number }}`
+
+            **Come installare sul telefono Android:**
+            1. Scarica il file **`${{ env.APK_FILENAME }}`** qui sotto nella sezione **Assets**.
+            2. Apri il file APK scaricato sul telefono (se richiesto, consenti l'installazione da app sconosciute/browser).
+            3. Avvia **Call of Doodle** in modalità orizzontale immersiva a schermo intero!
+
+            *Commit:* `${{ github.sha }}`
+          files: |
+            ${{ env.APK_FILENAME }}

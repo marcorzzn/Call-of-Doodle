@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GddTechnicalModal } from './components/GddTechnicalModal';
+import { MobileInstallModal } from './components/MobileInstallModal';
+import { MobileTouchControls } from './components/MobileTouchControls';
+import { usePWAInstall } from './hooks/usePWAInstall';
 import { WEAPONS_ARSENAL, WeaponId, WeaponSpec } from './data/gddData';
 import {
   boilingTimeUniform,
@@ -112,6 +115,12 @@ export default function App() {
     'Stile Doodle 3D Fedele allo Screenshot · Casa 760x760m · 17 Armi · Condotti HVAC & Libri'
   );
 
+  const { isInstallable, isInstalled, isMobile, isIOS, install } = usePWAInstall();
+  const [mobileInstallModalOpen, setMobileInstallModalOpen] = useState<boolean>(false);
+  const [forceTouchControls, setForceTouchControls] = useState<boolean | null>(null);
+
+  const showTouchControls = forceTouchControls !== null ? forceTouchControls : isMobile;
+
   const stateRef = useRef({
     phase: 'title' as GamePhase,
     arsenalMode: 'all_weapons' as ArsenalMode,
@@ -141,6 +150,17 @@ export default function App() {
     teleportRoomRequested: null as HouseRoom | 'condotto_hvac' | 'corridoio_libri' | null,
     laserTargetPoint: new THREE.Vector3(14, 0.35, 14),
     laserActive: false,
+    touchMoveVector: { x: 0, y: 0 },
+    touchAimDelta: { x: 0, y: 0 },
+    touchIsSprinting: false,
+    touchIsFiring: false,
+    fireWeapon: () => {},
+    triggerReload: () => {},
+    triggerJump: () => {},
+    triggerCrouch: () => {},
+    triggerSniper: () => {},
+    cycleWeapon: (_dir: number) => {},
+    triggerFlush: () => {},
   });
 
   useEffect(() => {
@@ -962,6 +982,51 @@ export default function App() {
       switchWeapon(unlockedList[nextIdx].id);
     };
 
+    // Bind action callbacks for mobile touch controls
+    stateRef.current.fireWeapon = fireCurrentWeapon;
+    stateRef.current.triggerReload = () => {
+      if (stateRef.current.weaponId === 'forchetta' && stateRef.current.ammo.forchetta === 0) {
+        stateRef.current.ammo.forchetta = 1;
+        setAmmoCounts({ ...stateRef.current.ammo });
+        foleyAudio.playReload();
+        triggerComicPop('FORCHETTA RECUPERATA!');
+      } else {
+        startReload();
+      }
+    };
+    stateRef.current.triggerJump = () => {
+      if (stateRef.current.gluedMashesRemaining > 0) {
+        stateRef.current.gluedMashesRemaining -= 1;
+        setPlayerGluedCount(stateRef.current.gluedMashesRemaining);
+        foleyAudio.playWeaponFire('colla_caldo');
+      } else if (player.grounded || player.coyoteTimer > 0) {
+        player.vel.y = 11.2;
+        player.grounded = false;
+        player.coyoteTimer = 0;
+        foleyAudio.playBoing(0);
+      }
+    };
+    stateRef.current.triggerCrouch = () => {
+      stateRef.current.crouching = !stateRef.current.crouching;
+      setIsCrouching(stateRef.current.crouching);
+    };
+    stateRef.current.triggerSniper = () => {
+      if (stateRef.current.weaponId === 'penna_bic') {
+        stateRef.current.sniperAim = !stateRef.current.sniperAim;
+        setIsSniperAiming(stateRef.current.sniperAim);
+      }
+    };
+    stateRef.current.cycleWeapon = (dir: number) => {
+      const unlockedList = WEAPONS_ARSENAL.filter((w) => stateRef.current.unlocked.has(w.id));
+      if (unlockedList.length === 0) return;
+      const idx = unlockedList.findIndex((w) => w.id === stateRef.current.weaponId);
+      const nextIdx = (idx + dir + unlockedList.length) % unlockedList.length;
+      switchWeapon(unlockedList[nextIdx].id);
+    };
+    stateRef.current.triggerFlush = () => {
+      triggerToiletFlushCombo();
+    };
+
     const onResize = () => {
       if (!mountEl) return;
       const w = mountEl.clientWidth || window.innerWidth;
@@ -1081,6 +1146,22 @@ export default function App() {
         if (heldKeys.has('ArrowUp')) player.pitch = Math.min(1.1, player.pitch + 1.5 * dt);
         if (heldKeys.has('ArrowDown')) player.pitch = Math.max(-1.1, player.pitch - 1.5 * dt);
 
+        // Mobile Touch Aim Joystick Delta
+        if (stateRef.current.touchAimDelta.x !== 0 || stateRef.current.touchAimDelta.y !== 0) {
+          const touchSens = stateRef.current.sniperAim ? 1.4 : 2.8;
+          player.yaw -= stateRef.current.touchAimDelta.x * touchSens * dt;
+          player.pitch = THREE.MathUtils.clamp(
+            player.pitch - stateRef.current.touchAimDelta.y * touchSens * dt,
+            -1.15,
+            1.15
+          );
+        }
+
+        // Mobile Continuous Touch Fire while holding SPARA button
+        if (stateRef.current.touchIsFiring) {
+          fireCurrentWeapon();
+        }
+
         if (stateRef.current.blindTimer > 0) {
           stateRef.current.blindTimer = Math.max(0, stateRef.current.blindTimer - dt);
           setPlayerBlindTimer(stateRef.current.blindTimer);
@@ -1095,11 +1176,19 @@ export default function App() {
           if (heldKeys.has('KeyS')) _moveVec.sub(_forward);
           if (heldKeys.has('KeyD')) _moveVec.add(_right);
           if (heldKeys.has('KeyA')) _moveVec.sub(_right);
+
+          // Mobile Virtual Touch Move Stick
+          const tmx = stateRef.current.touchMoveVector.x;
+          const tmy = stateRef.current.touchMoveVector.y;
+          if (tmx !== 0 || tmy !== 0) {
+            _moveVec.addScaledVector(_forward, -tmy);
+            _moveVec.addScaledVector(_right, tmx);
+          }
         }
 
-        // Sprint with [Shift] & Stamina management
+        // Sprint with [Shift] or Mobile Sprint Toggle & Stamina management
         const wantsSprint =
-          (heldKeys.has('ShiftLeft') || heldKeys.has('ShiftRight')) &&
+          ((heldKeys.has('ShiftLeft') || heldKeys.has('ShiftRight')) || stateRef.current.touchIsSprinting) &&
           _moveVec.lengthSq() > 0 &&
           !stateRef.current.crouching &&
           stateRef.current.stamina > 5;
@@ -2256,11 +2345,30 @@ export default function App() {
           )}
         </div>
 
-        {/* Top-Right: P2 Torn Paper Strip + Pencil Sharpener ("Temperino") Tag & GDD Button */}
-        <div className="flex items-start gap-2.5 pointer-events-auto">
+        {/* Top-Right: Mobile APK & PWA, Touch Toggle, GDD Button, and P2 Torn Paper Strip */}
+        <div className="flex items-start gap-1.5 md:gap-2.5 pointer-events-auto">
+          <button
+            onClick={() => setMobileInstallModalOpen(true)}
+            className="sketch-box-sm px-2.5 py-1.5 md:py-2 bg-emerald-200 hover:bg-emerald-300 text-zinc-950 font-hand font-bold text-xs md:text-sm cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1 border-2 border-zinc-950"
+            title="Scarica / Installa versione per cellulare (APK o PWA)"
+          >
+            <span>📱</span>
+            <span className="hidden xs:inline">App Mobile</span>
+          </button>
+
+          <button
+            onClick={() => setForceTouchControls((prev) => (prev === null ? !isMobile : !prev))}
+            className={`sketch-box-sm px-2 py-1.5 md:py-2 font-hand font-bold text-xs md:text-sm cursor-pointer whitespace-nowrap shrink-0 border-2 border-zinc-950 ${
+              showTouchControls ? 'bg-amber-300 text-zinc-950' : 'bg-[#f5f2e8] text-zinc-700'
+            }`}
+            title="Attiva / Disattiva stick virtuali e controlli touch"
+          >
+            🎮 {showTouchControls ? 'Touch ON' : 'Touch OFF'}
+          </button>
+
           <button
             onClick={() => setGddOpen(true)}
-            className="sketch-box-sm px-3 py-2 pencil-hatch-yellow hover:brightness-95 text-zinc-950 font-hand font-bold text-xs md:text-sm cursor-pointer whitespace-nowrap shrink-0"
+            className="sketch-box-sm px-2.5 py-1.5 md:py-2 pencil-hatch-yellow hover:brightness-95 text-zinc-950 font-hand font-bold text-xs md:text-sm cursor-pointer whitespace-nowrap shrink-0"
           >
             GDD & 17 Armi
           </button>
@@ -2668,12 +2776,20 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-4 pt-1">
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
               <button
                 onClick={() => setGamePhase('playing')}
-                className="px-7 py-2.5 text-xl font-bold font-hand bg-zinc-900 hover:bg-zinc-800 text-amber-300 border-2 border-zinc-950 rounded-xl shadow-[4px_4px_0px_#eab308] cursor-pointer whitespace-nowrap shrink-0"
+                className="px-6 py-2.5 text-xl font-bold font-hand bg-zinc-900 hover:bg-zinc-800 text-amber-300 border-2 border-zinc-950 rounded-xl shadow-[4px_4px_0px_#eab308] cursor-pointer whitespace-nowrap shrink-0"
               >
                 {gamePhase === 'paused' ? 'Riprendi Partita (SPAZIO)' : 'Entra nella Casa 3D (INVIO / SPAZIO)'}
+              </button>
+
+              <button
+                onClick={() => setMobileInstallModalOpen(true)}
+                className="px-5 py-2.5 text-lg font-bold font-hand bg-emerald-400 hover:bg-emerald-500 text-zinc-950 border-2 border-zinc-950 rounded-xl shadow-[4px_4px_0px_#141413] cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-2"
+              >
+                <span>📱</span>
+                <span>Versione Cellulare (APK & PWA)</span>
               </button>
 
               <button
@@ -2685,7 +2801,7 @@ export default function App() {
             </div>
 
             <div className="text-xs font-mono-code text-zinc-700">
-              WASD Muovi · Shift Scatto · Spazio Salta · C Accovaccia · R Ricarica · Click Spara · Z/Dx Mirino Bic · E Sciacquone
+              Desktop: WASD Muovi · Shift Scatto · Spazio Salta · C Accovaccia · R Ricarica · Click Spara | Mobile: Dual Stick Analogici & Tasti Touch
             </div>
           </div>
         </div>
@@ -2702,6 +2818,57 @@ export default function App() {
           setActiveWeaponId(wId);
         }}
         onSelectRoomToTeleport={handleTeleportRoom}
+      />
+
+      {/* 10. Mobile Touch Controls Overlay (Dual Virtual Sticks & Tactical Touch Buttons) */}
+      {gamePhase === 'playing' && showTouchControls && (
+        <MobileTouchControls
+          activeWeaponId={activeWeaponId}
+          isCrouching={isCrouching}
+          isSniperAiming={isSniperAiming}
+          stamina={stamina}
+          currentRoom={currentRoom}
+          onFireStart={() => {
+            stateRef.current.touchIsFiring = true;
+            stateRef.current.fireWeapon();
+          }}
+          onFireEnd={() => {
+            stateRef.current.touchIsFiring = false;
+          }}
+          onJump={() => {
+            stateRef.current.triggerJump();
+          }}
+          onCrouchToggle={() => {
+            stateRef.current.triggerCrouch();
+          }}
+          onReload={() => {
+            stateRef.current.triggerReload();
+          }}
+          onCycleWeapon={(dir) => {
+            stateRef.current.cycleWeapon(dir);
+          }}
+          onSniperToggle={() => {
+            stateRef.current.triggerSniper();
+          }}
+          onFlush={() => {
+            stateRef.current.triggerFlush();
+          }}
+          onSprintToggle={(sprint) => {
+            stateRef.current.touchIsSprinting = sprint;
+          }}
+          onMoveVectorChange={(vec) => {
+            stateRef.current.touchMoveVector = vec;
+          }}
+          onAimDeltaChange={(delta) => {
+            stateRef.current.touchAimDelta = delta;
+          }}
+        />
+      )}
+
+      {/* 11. Mobile APK & Standalone PWA Installation Modal */}
+      <MobileInstallModal
+        isOpen={mobileInstallModalOpen}
+        onClose={() => setMobileInstallModalOpen(false)}
       />
     </div>
   );
