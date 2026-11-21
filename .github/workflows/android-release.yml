@@ -30,24 +30,36 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Gradle cache
+      - name: Setup Android SDK & Accept Licenses (API 36)
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android Platform 36 & Build Tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Setup Gradle 8.14.3
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
 
       - name: Install Node dependencies
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --legacy-peer-deps
           else
-            npm install
+            npm install --legacy-peer-deps
           fi
 
       - name: Build Web App & Sync Capacitor Android
         run: |
           npm run build
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
           npx cap sync android
 
       - name: Prepare Android Signing Keystore
-        id: keystore
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -55,14 +67,15 @@ jobs:
           KEY_PASS_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           KEYSTORE_PATH="/tmp/callofdoodle-release.keystore"
+          rm -f "$KEYSTORE_PATH"
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
-            echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> $GITHUB_ENV
-            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASS" >> $GITHUB_ENV
-            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_SECRET" >> $GITHUB_ENV
-            echo "ANDROID_KEY_PASSWORD=$KEY_PASS_SECRET" >> $GITHUB_ENV
+            echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASS_SECRET" >> "$GITHUB_ENV"
           else
-            keytool -genkeypair -v \
+            keytool -genkeypair -noprompt \
               -keystore "$KEYSTORE_PATH" \
               -storetype PKCS12 \
               -keyalg RSA \
@@ -72,26 +85,33 @@ jobs:
               -storepass callofdoodle123 \
               -keypass callofdoodle123 \
               -dname "CN=Call of Doodle, OU=Mobile, O=CallOfDoodle, L=Home, S=Italy, C=IT"
-            echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> $GITHUB_ENV
-            echo "ANDROID_KEYSTORE_PASSWORD=callofdoodle123" >> $GITHUB_ENV
-            echo "ANDROID_KEY_ALIAS=callofdoodle" >> $GITHUB_ENV
-            echo "ANDROID_KEY_PASSWORD=callofdoodle123" >> $GITHUB_ENV
+            echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=callofdoodle123" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=callofdoodle" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=callofdoodle123" >> "$GITHUB_ENV"
           fi
+          ls -lh "$KEYSTORE_PATH"
 
       - name: Compile Android Release APK with Gradle
+        working-directory: android
         run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleRelease \
+          gradle assembleRelease \
             --no-daemon \
+            --stacktrace \
             -PappVersionCode=${{ github.run_number }} \
             -PappVersionName="1.0.${{ github.run_number }}"
 
-      - name: Package & Rename APK
+      - name: Package & Verify Signed APK
         run: |
+          APK_SRC=$(find android/app/build/outputs/apk/release -maxdepth 1 -name "*.apk" | head -n 1)
+          if [ -z "$APK_SRC" ] || [ ! -f "$APK_SRC" ]; then
+            echo "ERROR: APK non trovato in android/app/build/outputs/apk/release"
+            ls -la android/app/build/outputs/apk/release || true
+            exit 1
+          fi
           APK_NAME="Call-of-Doodle-v1.0.${{ github.run_number }}.apk"
-          cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
-          echo "APK_FILENAME=$APK_NAME" >> $GITHUB_ENV
+          cp "$APK_SRC" "$APK_NAME"
+          echo "APK_FILENAME=$APK_NAME" >> "$GITHUB_ENV"
           ls -lh "$APK_NAME"
 
       - name: Upload APK Workflow Artifact
@@ -99,6 +119,7 @@ jobs:
         with:
           name: Call-of-Doodle-v1.0.${{ github.run_number }}-APK
           path: ${{ env.APK_FILENAME }}
+          if-no-files-found: error
 
       - name: Create GitHub Release with Downloadable APK
         uses: softprops/action-gh-release@v2
@@ -108,6 +129,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: true
           body: |
             ### 📱 Call of Doodle — Build Android APK `v1.0.${{ github.run_number }}`
 
